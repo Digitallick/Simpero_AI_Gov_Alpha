@@ -22,10 +22,10 @@ Tests require a real PostgreSQL instance — SQLite will not work because tests 
 
 ### Two Postgres roles, strictly separated
 
-| Role | Privileges | Used by |
-|---|---|---|
-| `dd_owner` | DDL only | Alembic via `ALEMBIC_DATABASE_URL` |
-| `dd_app` | DML only, RLS-restricted | App at runtime via `DATABASE_URL` |
+| Role      | Privileges               | Used by                            |
+| --------- | ------------------------ | ---------------------------------- |
+| `doadmin` | DDL only                 | Alembic via `ALEMBIC_DATABASE_URL` |
+| `dd_app`  | DML only, RLS-restricted | App at runtime via `DATABASE_URL`  |
 
 `ALEMBIC_DATABASE_URL` connects **directly** to the DigitalOcean cluster, bypassing PgBouncer — DDL is not safe in transaction-pooling mode. `DATABASE_URL` routes through PgBouncer. Never swap them.
 

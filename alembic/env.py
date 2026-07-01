@@ -26,7 +26,7 @@ target_metadata = Base.metadata
 
 
 def get_alembic_url() -> tuple[str, bool]:
-    # Migrations run as dd_owner (DDL privileges). The runtime app uses dd_app (DML only,
+    # Migrations run as doadmin (DDL privileges). The runtime app uses dd_app (DML only,
     # RLS-restricted). ALEMBIC_DATABASE_URL must point directly at the DigitalOcean cluster,
     # bypassing PgBouncer — DDL statements are not safe in transaction-pooling mode.
     # NEVER substitute DATABASE_URL here.
@@ -34,12 +34,12 @@ def get_alembic_url() -> tuple[str, bool]:
     if not url:
         raise RuntimeError(
             "ALEMBIC_DATABASE_URL environment variable is not set. "
-            "This must be a direct connection to the database as dd_owner (not via PgBouncer)."
+            "This must be a direct connection to the database as doadmin (not via PgBouncer)."
         )
     # Ensure the URL uses the asyncpg driver regardless of what scheme was set in .env.
     for scheme in ("postgresql+psycopg2://", "postgresql://"):
         if url.startswith(scheme):
-            url = "postgresql+asyncpg://" + url[len(scheme):]
+            url = "postgresql+asyncpg://" + url[len(scheme) :]
             break
 
     # asyncpg doesn't accept sslmode= (libpq param). Strip it and return ssl flag separately.
@@ -86,7 +86,9 @@ def _make_ssl_context() -> ssl.SSLContext:
 async def run_migrations_online() -> None:
     url, use_ssl = get_alembic_url()
     connect_args = {"ssl": _make_ssl_context()} if use_ssl else {}
-    connectable = create_async_engine(url, poolclass=NullPool, connect_args=connect_args)
+    connectable = create_async_engine(
+        url, poolclass=NullPool, connect_args=connect_args
+    )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

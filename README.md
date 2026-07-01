@@ -42,11 +42,11 @@ uv run alembic upgrade head
 
 ## Architecture Notes
 
-### Role split: dd_owner vs dd_app
+### Role split: doadmin vs dd_app
 
 Two Postgres roles exist with separate responsibilities:
 
-- **dd_owner**: DDL privileges only. Used by Alembic via `ALEMBIC_DATABASE_URL`. Never at runtime.
+- **doadmin**: DDL privileges only. Used by Alembic via `ALEMBIC_DATABASE_URL`. Never at runtime.
 - **dd_app**: DML only, RLS-restricted. Used by the app at runtime via `DATABASE_URL` (through PgBouncer).
 
 ### Tenant isolation: SET LOCAL under PgBouncer transaction pooling

@@ -1,7 +1,7 @@
 version: "3.9"
 
 # No Postgres service — the app connects to a DigitalOcean managed database cluster.
-# DATABASE_URL (dd_app, via PgBouncer) and ALEMBIC_DATABASE_URL (dd_owner, direct to DO)
+# DATABASE_URL (dd_app, via PgBouncer) and ALEMBIC_DATABASE_URL (doadmin, direct to DO)
 # are provided via the .env file.
 
 services:
