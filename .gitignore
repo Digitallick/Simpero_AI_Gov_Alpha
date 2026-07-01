@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.so
+alembic/versions/*.pyc
+docker/userlist.txt
+.claude
+.env*
+docker/ca-certificate.crt
