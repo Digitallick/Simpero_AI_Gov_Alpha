@@ -14,3 +14,4 @@ docker/userlist.txt
 .claude
 .env*
 docker/ca-certificate.crt
+docs/

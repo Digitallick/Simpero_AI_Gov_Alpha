@@ -12,7 +12,11 @@ class Settings(BaseSettings):
     environment: str = "development"
     cors_allowed_origins: str = "http://localhost:3000"
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:
