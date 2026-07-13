@@ -20,9 +20,7 @@ async def get_current_user(authorization: str = Header(...)) -> dict:
     try:
         return decode_clerk_jwt(token)
     except AuthenticationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
 
 async def get_db(
@@ -62,26 +60,26 @@ async def get_db(
     try:
         claims = decode_clerk_jwt(token)
     except AuthenticationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     tenant_id = claims.get(CLERK_TENANT_ID_CLAIM)
     if not tenant_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"JWT missing required claim '{CLERK_TENANT_ID_CLAIM}' — cannot establish tenant context",
+            detail=(
+                f"JWT missing required claim '{CLERK_TENANT_ID_CLAIM}' — "
+                "cannot establish tenant context"
+            ),
         )
 
-    async with AsyncSessionLocal() as session:
-        async with session.begin():
-            # SET LOCAL must be the first SQL in this transaction — see docstring above.
-            await session.execute(
-                text("SET LOCAL app.org_id = :tid"),
-                {"tid": tenant_id},
-            )
-            try:
-                yield session
-            except Exception:
-                # session.begin() context manager handles rollback on exception
-                raise
+    async with AsyncSessionLocal() as session, session.begin():
+        # SET LOCAL must be the first SQL in this transaction — see docstring above.
+        await session.execute(
+            text("SET LOCAL app.org_id = :tid"),
+            {"tid": tenant_id},
+        )
+        try:
+            yield session
+        except Exception:
+            # session.begin() context manager handles rollback on exception
+            raise

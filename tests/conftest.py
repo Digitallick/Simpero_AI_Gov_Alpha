@@ -1,3 +1,5 @@
+from collections.abc import AsyncGenerator
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +15,7 @@ def test_org_id() -> str:
 
 
 @pytest.fixture
-async def db_session(test_org_id: str) -> AsyncSession:
+async def db_session(test_org_id: str) -> AsyncGenerator[AsyncSession, None]:
     """
     Test DB session fixture that replicates the production get_db pattern exactly.
 
@@ -28,11 +30,10 @@ async def db_session(test_org_id: str) -> AsyncSession:
     TODO: Set TEST_DATABASE_URL in .env (or CI environment) and wire AsyncSessionLocal
     to it for test runs. Consider pytest-docker or a dedicated test schema.
     """
-    async with AsyncSessionLocal() as session:
-        async with session.begin():
-            await session.execute(
-                text("SET LOCAL app.org_id = :tid"),
-                {"tid": test_org_id},
-            )
-            yield session
-            await session.rollback()
+    async with AsyncSessionLocal() as session, session.begin():
+        await session.execute(
+            text("SET LOCAL app.org_id = :tid"),
+            {"tid": test_org_id},
+        )
+        yield session
+        await session.rollback()

@@ -28,4 +28,4 @@ async def db_health_check() -> DbHealthResponse:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Database unreachable: {exc}",
-        )
+        ) from exc
