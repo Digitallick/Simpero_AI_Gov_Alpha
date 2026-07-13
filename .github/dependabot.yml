@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Python deps (uv / pyproject). Dependabot reads pyproject + uv.lock.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # Batch minor/patch bumps into one PR to reduce noise; majors stay separate.
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions themselves (keep setup-uv, checkout, etc. current).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3

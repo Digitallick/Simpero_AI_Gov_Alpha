@@ -15,6 +15,9 @@ class AuthorizationError(SimpleroBaseError):
 
 
 class TenantContextError(SimpleroBaseError):
-    """org_id could not be extracted from the JWT — treated as an auth failure, not a bad request."""
+    """org_id could not be extracted from the JWT.
+
+    Treated as an auth failure, not a bad request.
+    """
 
     pass

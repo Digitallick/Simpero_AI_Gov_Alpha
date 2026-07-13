@@ -86,9 +86,7 @@ def _make_ssl_context() -> ssl.SSLContext:
 async def run_migrations_online() -> None:
     url, use_ssl = get_alembic_url()
     connect_args = {"ssl": _make_ssl_context()} if use_ssl else {}
-    connectable = create_async_engine(
-        url, poolclass=NullPool, connect_args=connect_args
-    )
+    connectable = create_async_engine(url, poolclass=NullPool, connect_args=connect_args)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

@@ -22,7 +22,6 @@ def upgrade() -> None:
     """)
 
 
-
 def downgrade() -> None:
     op.execute("""
         ALTER DEFAULT PRIVILEGES FOR ROLE doadmin IN SCHEMA public

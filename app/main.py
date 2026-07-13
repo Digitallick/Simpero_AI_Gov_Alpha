@@ -2,13 +2,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api import deals, health
 from app.config import get_settings
 from app.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
     TenantContextError,
 )
-from app.api import deals, health
 
 settings = get_settings()
 
@@ -29,23 +29,17 @@ app.add_middleware(
 
 
 @app.exception_handler(AuthenticationError)
-async def authentication_error_handler(
-    request: Request, exc: AuthenticationError
-) -> JSONResponse:
+async def authentication_error_handler(request: Request, exc: AuthenticationError) -> JSONResponse:
     return JSONResponse(status_code=401, content={"detail": str(exc)})
 
 
 @app.exception_handler(AuthorizationError)
-async def authorization_error_handler(
-    request: Request, exc: AuthorizationError
-) -> JSONResponse:
+async def authorization_error_handler(request: Request, exc: AuthorizationError) -> JSONResponse:
     return JSONResponse(status_code=403, content={"detail": str(exc)})
 
 
 @app.exception_handler(TenantContextError)
-async def tenant_context_error_handler(
-    request: Request, exc: TenantContextError
-) -> JSONResponse:
+async def tenant_context_error_handler(request: Request, exc: TenantContextError) -> JSONResponse:
     # 401 not 400: missing tenant context is an auth failure, not a malformed request.
     return JSONResponse(status_code=401, content={"detail": str(exc)})
 
