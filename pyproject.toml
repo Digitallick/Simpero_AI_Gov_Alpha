@@ -24,6 +24,8 @@ dev = [
     "httpx>=0.27.0",
     "pyright>=1.1.411",
     "reportlab>=4.4.0",
+    "ruff>=0.6.0",
+    "jsonschema>=4.0.0",
 ]
 
 [tool.pytest.ini_options]
@@ -35,3 +37,16 @@ packages = ["app"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*" = ["E501", "F401"]
+"tests/*" = ["E501"]
+"contracts/*" = ["E501"]

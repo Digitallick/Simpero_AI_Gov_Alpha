@@ -1,0 +1,206 @@
+name: CI
+
+# Runs on every PR into main, and on pushes to main (post-merge safety net).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same PR/branch to save minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pin the Python version to the repo's requires-python (3.11).
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. LINT — ruff (style + a class of real bugs: unused vars, unreachable code)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      # ruff check = lint; ruff format --check = formatting-as-lint (non-mutating).
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+  # ---------------------------------------------------------------------------
+  # 2. TYPECHECK — pyright (the repo already ships pyrightconfig.json)
+  #    Load-bearing for the PageIndex / char_map invariants: a type error here
+  #    is exactly the kind of drift that silently breaks provenance.
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: Typecheck (pyright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: pyright
+        run: uv run pyright
+
+  # ---------------------------------------------------------------------------
+  # 3. TEST — pytest. THE most important job for this project.
+  #    Guards the correctness-critical invariants so a refactor can't silently
+  #    break provenance: DS-1 len(text)==len(char_map), the resolver's
+  #    fail-closed cases, the scale tests.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test (pytest)
+    runs-on: ubuntu-latest
+    # Placeholder settings so Settings() (built at import time in
+    # app.core.security) can construct in CI. The unit + contract tests do not
+    # open a DB or call Clerk, so dummy values are safe. DB-backed tests will
+    # need a `services: postgres` block + a matching DATABASE_URL.
+    env:
+      DATABASE_URL: "postgresql+asyncpg://ci:ci@localhost:5432/ci"
+      ALEMBIC_DATABASE_URL: "postgresql+psycopg2://ci:ci@localhost:5432/ci"
+      CLERK_SECRET_KEY: "ci-dummy"
+      CLERK_JWT_AUDIENCE: "ci-dummy"
+      CLERK_JWKS_URL: "https://example.test/.well-known/jwks.json"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      # No DB required for the parse-service unit tests (invariant, resolver,
+      # scale). If/when tests need Postgres, add a services: postgres block here.
+      - name: pytest
+        run: uv run pytest -q --maxfail=1
+
+  # ---------------------------------------------------------------------------
+  # 4. BUILD / IMPORT-SMOKE — confirm the service actually imports and the
+  #    package builds. Catches "it typechecks but doesn't run."
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build + import smoke
+    runs-on: ubuntu-latest
+    # See the test job: import-smoke constructs Settings() at import time.
+    env:
+      DATABASE_URL: "postgresql+asyncpg://ci:ci@localhost:5432/ci"
+      ALEMBIC_DATABASE_URL: "postgresql+psycopg2://ci:ci@localhost:5432/ci"
+      CLERK_SECRET_KEY: "ci-dummy"
+      CLERK_JWT_AUDIENCE: "ci-dummy"
+      CLERK_JWKS_URL: "https://example.test/.well-known/jwks.json"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      # Import the FastAPI app object — fails if a module-level error exists.
+      - name: Import app
+        run: uv run python -c "import app.main"
+
+      # Build the wheel (hatchling) — confirms packaging is intact.
+      - name: Build wheel
+        run: uv build
+
+  # ---------------------------------------------------------------------------
+  # 5. DEPENDENCY / VULNERABILITY CHECK — pip-audit over the resolved env.
+  #    Docling (arriving with the parse service) pulls a large ML dep tree;
+  #    surface known CVEs in transitive deps. Non-blocking for now
+  #    (continue-on-error) so a brand-new advisory doesn't wedge every PR —
+  #    flip to blocking once the dep tree is stable.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: pip-audit
+        continue-on-error: true
+        run: uv run --with pip-audit pip-audit
+
+  # ---------------------------------------------------------------------------
+  # 7. FACTS-SCHEMA CONTRACT VALIDATION — the project-specific check.
+  #    The Python parse service emits facts as JSON across the seam to the TS
+  #    app. This job validates that emitted shape against the shared JSON
+  #    Schema (the C3 contract), so a silent drift at the seam — the exact
+  #    failure mode the product exists to prevent — fails CI instead of
+  #    reaching production. Runs on every PR; cheap.
+  #    (Secret scanning = job #5 in the plan — that's a repo *setting*
+  #    -- GitHub native secret scanning + push protection -- not a workflow.
+  #    See ci-setup-notes.md.)
+  # ---------------------------------------------------------------------------
+  contract:
+    name: Facts-schema contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      # Validates a sample of emitted fact JSON against contracts/facts.schema.json
+      # (the shared source of truth the TS side also validates against).
+      # See contracts/test_facts_contract.py for the check.
+      - name: Validate facts JSON against shared schema
+        run: uv run --with jsonschema pytest -q contracts/test_facts_contract.py
