@@ -24,11 +24,14 @@ def copy_test_pdf_if_needed() -> Path | None:
     dest_path = dest_dir / "1st-App-H-PTL-Group-CIM.pdf"
 
     if not dest_path.exists():
-        src_path = Path("p:/simpero_GOV_AI/scripts/examples/1st-app-h-ptl/1st-App-H-PTL-Group-CIM.pdf")
+        src_path = Path(
+            "p:/simpero_GOV_AI/scripts/examples/1st-app-h-ptl/1st-App-H-PTL-Group-CIM.pdf"
+        )
         if src_path.exists():
             shutil.copy(src_path, dest_path)
 
     return dest_path if dest_path.exists() else None
+
 
 def run_verification():
     print("====================================================")
@@ -57,6 +60,7 @@ def run_verification():
     except Exception as e:
         print(f"❌ Parser failed with exception: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
     print("✅ Parser completed successfully.")
@@ -76,12 +80,16 @@ def run_verification():
         text_len = len(page.text)
         map_len = len(page.char_map)
         if text_len != map_len:
-            print(f"❌ Error on Page {page_no}: text length ({text_len}) does not match char_map length ({map_len}).")
+            print(
+                f"❌ Error on Page {page_no}: text length ({text_len}) does not match char_map length ({map_len})."
+            )
             sys.exit(1)
 
         for k in range(text_len):
             if page.text[k] != page.char_map[k].char:
-                print(f"❌ Error on Page {page_no} at character index {k}: text has '{page.text[k]}', char_map has '{page.char_map[k].char}'.")
+                print(
+                    f"❌ Error on Page {page_no} at character index {k}: text has '{page.text[k]}', char_map has '{page.char_map[k].char}'."
+                )
                 sys.exit(1)
     print("✅ Page invariants verified successfully for all 19 pages.")
 
@@ -97,7 +105,9 @@ def run_verification():
         sys.exit(1)
 
     if "3 ,817" in page_11.text:
-        print("❌ Error: Found un-normalized '3 ,817' on Page 11. Normalization did not collapse the space.")
+        print(
+            "❌ Error: Found un-normalized '3 ,817' on Page 11. Normalization did not collapse the space."
+        )
         sys.exit(1)
 
     print("✅ Space-separated numeric token '3 ,817' successfully normalized to '3,817'.")
@@ -116,6 +126,7 @@ def run_verification():
     print("\n====================================================")
     print("🎉 ALL TESTS PASSED! DS-1 IS 100% CORRECT & READY!")
     print("====================================================")
+
 
 if __name__ == "__main__":
     run_verification()
