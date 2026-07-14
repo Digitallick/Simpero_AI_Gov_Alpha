@@ -30,6 +30,9 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "local_corpus: supplementary tests against real corpus documents available only on some local machines (not committed, may contain confidential content). Always explicitly skipped, never silently, when the fixture isn't present. Not required for CI; do not rely on these for coverage.",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
