@@ -13,6 +13,9 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "httpx>=0.27.0",
     "psycopg2-binary>=2.9.12",
+    "pypdf>=6.4.0",
+    "docling>=2.0.0",
+    "boto3>=1.34.0",
 ]
 
 [dependency-groups]
@@ -21,12 +24,16 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
     "pyright>=1.1.411",
+    "reportlab>=4.4.0",
     "ruff>=0.6.0",
     "jsonschema>=4.0.0",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "local_corpus: supplementary tests against real corpus documents available only on some local machines (not committed, may contain confidential content). Always explicitly skipped, never silently, when the fixture isn't present. Not required for CI; do not rely on these for coverage.",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

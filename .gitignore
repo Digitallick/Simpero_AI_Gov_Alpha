@@ -14,3 +14,16 @@ docker/userlist.txt
 .claude
 .env*
 docker/ca-certificate.crt
+docs/
+
+# Parser runtime cache (regenerated locally per-PDF, not source)
+services/parser/cache/
+
+# Local test PDFs — may contain confidential client documents (CIMs, financials).
+# Never commit real deal documents to this repo.
+tests/test_data/
+
+# One-off crash-investigation scripts (not part of the DS-1 deliverable, not pytest tests)
+tests/diagnose_ds1_crash.py
+tests/diagnose_ds1_deep.py
+tests/diagnose_ds1_instrumented.py
