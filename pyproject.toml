@@ -17,6 +17,7 @@ dependencies = [
     "docling>=2.0.0",
     "boto3>=1.34.0",
     "openpyxl>=3.1.5",
+    "saq[redis,web]>=0.26.4",
 ]
 
 [dependency-groups]

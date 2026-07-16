@@ -1,8 +1,8 @@
 version: "3.9"
 
-# No Postgres service — the app connects to a DigitalOcean managed database cluster.
-# DATABASE_URL (dd_app, via PgBouncer) and ALEMBIC_DATABASE_URL (doadmin, direct to DO)
-# are provided via the .env file.
+# No Postgres or Valkey service — the app connects to DigitalOcean managed clusters for both.
+# DATABASE_URL (dd_app, via PgBouncer), ALEMBIC_DATABASE_URL (doadmin, direct to DO), and
+# VALKEY_URL (DO Managed Valkey, direct — no local pooler) are provided via the .env file.
 
 services:
   pgbouncer:
@@ -36,6 +36,15 @@ services:
     # DATABASE_URL in .env must point to pgbouncer:5432 (the service above), not directly to DO.
     # ALEMBIC_DATABASE_URL in .env points directly to the DO cluster — used only for migrations,
     # never at runtime.
+
+  worker:
+    build: .
+    command: ["saq", "app.jobs.worker.settings"]
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Runs the SAQ worker that actually executes jobs — the app service only enqueues them.
+    # Connects to VALKEY_URL directly (DO Managed Valkey); no local pooler needed for Redis/Valkey.
 
 networks:
   default:

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import deals, health
-from app.config import get_settings
+from app.core.config import get_settings
 from app.core.exceptions import (
     AuthenticationError,
     AuthorizationError,

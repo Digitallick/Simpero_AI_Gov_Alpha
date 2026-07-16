@@ -9,3 +9,8 @@ class HealthResponse(BaseModel):
 class DbHealthResponse(BaseModel):
     status: str
     database: str
+
+
+class QueueHealthResponse(BaseModel):
+    status: str
+    queue: str

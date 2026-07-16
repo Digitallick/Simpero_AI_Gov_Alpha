@@ -12,7 +12,7 @@ dist/
 alembic/versions/*.pyc
 docker/userlist.txt
 .claude
-.env*
+.env
 docker/ca-certificate.crt
 docs/
 
@@ -27,3 +27,5 @@ tests/test_data/
 tests/diagnose_ds1_crash.py
 tests/diagnose_ds1_deep.py
 tests/diagnose_ds1_instrumented.py
+,claude
+.claude-flow

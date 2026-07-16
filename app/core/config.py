@@ -9,14 +9,11 @@ class Settings(BaseSettings):
     clerk_secret_key: str
     clerk_jwt_audience: str
     clerk_jwks_url: str
+    valkey_url: str
     environment: str = "development"
     cors_allowed_origins: str = "http://localhost:3000"
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=False,
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     @property
     def cors_origins_list(self) -> list[str]:
