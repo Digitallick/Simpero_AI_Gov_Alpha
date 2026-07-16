@@ -88,6 +88,7 @@ jobs:
       CLERK_SECRET_KEY: "ci-dummy"
       CLERK_JWT_AUDIENCE: "ci-dummy"
       CLERK_JWKS_URL: "https://example.test/.well-known/jwks.json"
+      VALKEY_URL: "redis://localhost:6379/0"
     steps:
       - uses: actions/checkout@v4
 
@@ -121,6 +122,7 @@ jobs:
       CLERK_SECRET_KEY: "ci-dummy"
       CLERK_JWT_AUDIENCE: "ci-dummy"
       CLERK_JWKS_URL: "https://example.test/.well-known/jwks.json"
+      VALKEY_URL: "redis://localhost:6379/0"
     steps:
       - uses: actions/checkout@v4
 
