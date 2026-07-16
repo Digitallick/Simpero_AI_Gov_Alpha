@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AuthenticationError
 from app.core.security import CLERK_TENANT_ID_CLAIM, decode_clerk_jwt
-from app.database import AsyncSessionLocal
+from app.core.database import AsyncSessionLocal
 
 
 async def get_current_user(authorization: str = Header(...)) -> dict:

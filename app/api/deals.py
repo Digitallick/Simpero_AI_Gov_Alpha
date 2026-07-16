@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db
+from app.core.dependencies import get_db
 from app.schemas.deals import DealResponse
 
 router = APIRouter(prefix="/deals", tags=["deals"])

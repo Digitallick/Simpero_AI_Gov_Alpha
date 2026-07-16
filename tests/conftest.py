@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal
+from app.core.database import AsyncSessionLocal
 
 TEST_org_id = "test-tenant-00000000"
 

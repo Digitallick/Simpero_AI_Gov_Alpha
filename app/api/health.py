@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import text
 
-from app.config import get_settings
-from app.database import AsyncSessionLocal
-from app.schemas.health import DbHealthResponse, HealthResponse
+from app.core.config import get_settings
+from app.core.database import AsyncSessionLocal
+from app.jobs.queue import get_queue
+from app.schemas.health import DbHealthResponse, HealthResponse, QueueHealthResponse
 
 router = APIRouter(tags=["health"])
 settings = get_settings()
@@ -28,4 +29,17 @@ async def db_health_check() -> DbHealthResponse:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Database unreachable: {exc}",
+        ) from exc
+
+
+@router.get("/health/queue", response_model=QueueHealthResponse)
+async def queue_health_check() -> QueueHealthResponse:
+    # No auth dependency — liveness probe must not require a valid JWT.
+    try:
+        await get_queue().info()
+        return QueueHealthResponse(status="ok", queue="reachable")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Queue unreachable: {exc}",
         ) from exc

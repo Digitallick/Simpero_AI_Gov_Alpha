@@ -15,7 +15,7 @@ load_dotenv()
 import app.models  # noqa: E402, F401 — registers all models on Base.metadata
 
 # load_dotenv() must run before app imports so config.py sees the env vars.
-from app.database import Base  # noqa: E402
+from app.core.database import Base  # noqa: E402
 
 config = context.config
 

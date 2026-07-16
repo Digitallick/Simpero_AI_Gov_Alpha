@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv sync                              # install / sync dependencies
-docker compose up --build            # start PgBouncer + app (port 8000)
+docker compose up --build            # start PgBouncer + app (port 8000) + SAQ worker
 uv run uvicorn app.main:app --reload # run app locally without Docker
 uv run alembic upgrade head          # apply migrations
 uv run alembic revision --autogenerate -m "description"  # generate migration
@@ -14,6 +14,9 @@ uv run alembic revision --autogenerate -m "description"  # generate migration
 uv run pytest                        # run all tests
 uv run pytest tests/path/test_foo.py::test_name  # single test
 uv run pyright                       # type checking
+
+uv run saq app.jobs.worker.settings              # run the SAQ job worker
+uv run saq app.jobs.worker.settings --web        # run the worker with the SAQ web dashboard (port 8080)
 ```
 
 Tests require a real PostgreSQL instance — SQLite will not work because tests exercise RLS policies and `current_setting()`, which are PostgreSQL-specific.
@@ -55,6 +58,18 @@ Do not open DB connections at application startup — that would hold a PgBounce
 ### Audit log immutability
 
 `UPDATE` and `DELETE` on `audit_log` are revoked from `dd_app` at the database level. Do not add application-level guards — they can be bypassed and give false assurance. The `AuditLog` model in `app/models/audit_log.py` is commented out pending the table's full implementation.
+
+### Job queue: SAQ + DigitalOcean Managed Valkey
+
+Background jobs run on [SAQ](https://github.com/tobymao/saq), backed by a DigitalOcean Managed Valkey instance (`VALKEY_URL`).
+
+- `app/jobs/queue.py::get_queue` returns a process-wide `Queue` singleton (`Queue.from_url` is lazy — no connection opens at import time, same no-connections-at-startup rule as Postgres).
+- `app/jobs/tasks/` holds job functions; register new ones in `app/jobs/tasks/__init__.py::functions`.
+- `app/jobs/worker.py` exposes the `settings: SettingsDict` the SAQ CLI runs against (`uv run saq app.jobs.worker.settings`).
+- `VALKEY_URL` must use `rediss://` (TLS) — DO Valkey rejects unencrypted connections from outside its private network. `?ssl_cert_reqs=none` on the URL matches the `sslmode=require` posture already used for `DATABASE_URL`/`ALEMBIC_DATABASE_URL` (encrypts, doesn't pin the CA).
+- `GET /health/queue` verifies connectivity the same way `/health/db` does for Postgres.
+- Run `uv run saq app.jobs.worker.settings --web` for the built-in dashboard (port 8080) — do not expose this port publicly without auth in front of it.
+- `docker-compose.yml`'s `worker` service runs the SAQ worker in its own container (same image as `app`, command overridden) — the `app` service only enqueues jobs, it never executes them.
 
 ### Request flow
 
