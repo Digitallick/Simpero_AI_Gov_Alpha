@@ -2,6 +2,10 @@
 
 FastAPI backend for the Simpero AI-powered due diligence platform.
 
+> **Just want to see the whole thing run?** [`sandbox/`](sandbox/README.md) runs
+> the full pipeline — a CIM in, cited claims in a local Postgres — with zero
+> cloud dependencies: `./sandbox/up.sh` then `./sandbox/run.sh your-cim.pdf`.
+
 ## Stack
 
 - **FastAPI** + **uvicorn** — ASGI web framework

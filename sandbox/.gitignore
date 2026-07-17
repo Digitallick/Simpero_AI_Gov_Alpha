@@ -1,0 +1,4 @@
+# CIMs you run through the sandbox, and the emitted claims JSON. Real deal
+# documents are confidential and must never be committed -- this directory is
+# where run.sh copies them, kept local by design.
+cim/

@@ -83,21 +83,32 @@ async def _run(payload: dict, org_key: str, commit: bool) -> None:
     print(f"{len(claims)} claims validated against the contract.")
 
     async with AsyncSessionLocal() as session, session.begin():
-        # The demo tenant. Created as the current (admin) role so the org
-        # exists before we drop to dd_app for the claims themselves.
-        org = Organisation(clerk_org_id=org_key, name=f"E2E demo ({org_key})", type=OrgType.PE_FIRM)
-        session.add(org)
-        await session.flush()  # assigns org.id
-        org_id = org.id
-
-        # From here on, be the app: dd_app is not the table owner, so RLS
-        # applies, and app.org_id scopes every read and the INSERT WITH CHECK.
+        # Establish the app's identity and tenant FIRST, so the entire insert
+        # path runs exactly as the app would: as dd_app (not the table owner, so
+        # RLS applies), under a tenant context. This works whether the connection
+        # is dd_app directly (the sandbox) or an admin role (SET ROLE then drops
+        # to dd_app) -- and it means the organisation insert below is itself
+        # subject to RLS's WITH CHECK, not slipped in as the owner.
         await session.execute(text("SET LOCAL ROLE dd_app"))
         # set_config(..., is_local=true) is the parameterizable form of
         # `SET LOCAL app.org_id = ...`. A bare `SET LOCAL x = :p` cannot bind
         # a parameter under asyncpg (SET is not a preparable statement) --
         # which is a latent bug in app/core/dependencies.py::get_db today.
         await session.execute(text("SELECT set_config('app.org_id', :k, true)"), {"k": org_key})
+
+        # The demo tenant. Get-or-create: in reality the org already exists (it
+        # comes from signup), and re-running the demo must not trip the unique
+        # clerk_org_id. The SELECT runs under RLS, so it can only ever find the
+        # current tenant's own row.
+        org = await session.scalar(select(Organisation).where(Organisation.clerk_org_id == org_key))
+        if org is None:
+            # WITH CHECK passes because clerk_org_id equals app.org_id, set above.
+            org = Organisation(
+                clerk_org_id=org_key, name=f"E2E demo ({org_key})", type=OrgType.PE_FIRM
+            )
+            session.add(org)
+            await session.flush()  # assigns org.id
+        org_id = org.id
 
         session.add_all(_row_from_claim(c, org_id) for c in claims)
         await session.flush()

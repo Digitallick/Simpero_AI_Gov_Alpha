@@ -1,0 +1,52 @@
+# Local sandbox — the whole thing on your machine, zero cloud dependencies.
+#
+# This is NOT the production compose (../docker-compose.yml points at DigitalOcean).
+# It runs stock Postgres and Valkey locally so anyone can migrate and run the
+# pipeline without cluster access, a firewall rule, or credentials.
+#
+# Only stock images, no custom builds: the app code runs from your uv venvs via
+# the sandbox scripts, which keeps this file simple and reliable and avoids
+# rebuilding the parser's multi-gigabyte ML image just to see claims land.
+#
+#   ./sandbox/up.sh                     # bring this up + migrate
+#   ./sandbox/run.sh <your-cim.pdf>     # parse -> extract -> emit -> ingest
+#   ./sandbox/down.sh                   # stop  (--wipe to delete the data too)
+
+name: simpero-sandbox
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      # doadmin becomes the superuser that owns the simpero database and runs
+      # migrations -- the same role the production cluster uses for DDL. The
+      # init script adds dd_app (the RLS-restricted runtime role).
+      POSTGRES_USER: doadmin
+      POSTGRES_PASSWORD: sandbox_doadmin
+      POSTGRES_DB: simpero
+    ports:
+      # 5433 on the host so this never collides with a local Postgres on 5432.
+      - "5433:5432"
+    volumes:
+      - simpero_sandbox_pgdata:/var/lib/postgresql/data
+      # Runs once, on first init, as doadmin against the simpero database.
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doadmin -d simpero"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  valkey:
+    image: valkey/valkey:8
+    ports:
+      # 6380 to stay clear of a local Redis/Valkey on 6379.
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  simpero_sandbox_pgdata:
