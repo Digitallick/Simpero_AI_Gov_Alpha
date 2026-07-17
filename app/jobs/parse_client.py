@@ -53,7 +53,9 @@ async def enqueue_parse_job(spaces_key: str, known_sha256s: list[str] | None = N
         spaces_key=spaces_key,
         known_sha256s=known_sha256s,
     )
-    assert job is not None, "enqueue() only returns None if the job already exists uniquely and was skipped"
+    assert job is not None, (
+        "enqueue() only returns None if the job already exists uniquely and was skipped"
+    )
     return job.key
 
 
