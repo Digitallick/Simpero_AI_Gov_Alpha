@@ -27,6 +27,7 @@ from services.parser.parser_service.inspect import (
     classify_token,
     detect_numeric_tokens,
     inspect_pdf,
+    is_boilerplate_token,
     main,
     render_page_overlay,
 )
@@ -144,6 +145,45 @@ def make_page(text: str, page_no: int = 1) -> PageIndex:
             )
             x += 5.0
     return PageIndex(page=page_no, text=text, char_map=char_map)
+
+
+def test_boilerplate_numbers_are_excluded_not_boxed_red() -> None:
+    # Acceptance: page furniture is not a claim, so a number inside it is not a
+    # miss. The shape heuristic already drops a bare page number; this covers
+    # what it cannot -- furniture that happens to look financial. A running
+    # total in a footer boxed red would report a recall gap that does not exist.
+    page = make_page("Confidential -- do not distribute $9,999")
+    for char in page.char_map:
+        char.is_boilerplate = True
+
+    tokens = detect_numeric_tokens(page.text)
+    assert [t.text for t in tokens] == ["$9,999"], "the token must still be detected"
+    assert all(is_boilerplate_token(t, page) for t in tokens)
+
+
+def test_real_figures_are_not_mistaken_for_boilerplate() -> None:
+    # The mirror of the above, and the more important direction: over-excluding
+    # would hide a real miss, which is the one failure this harness must not
+    # have. Identical token, ordinary body text, must not be excluded.
+    page = make_page("Revenue $9,999")
+    tokens = detect_numeric_tokens(page.text)
+    assert [t.text for t in tokens] == ["$9,999"]
+    assert not any(is_boilerplate_token(t, page) for t in tokens)
+
+
+def test_bare_table_figure_is_scaled_like_its_dollar_marked_row() -> None:
+    # PTL PDF-page 11 prints "Revenue $15,295" but "Gross Margin 4,171" -- money
+    # either way, and 4,171 means 4,171,000 under the CAD (in Thousands) header.
+    # Typing an unmarked token as `count` would refuse the scale and show an
+    # income-statement figure a thousand times too small, in a green box.
+    page = make_page("CAD (in Thousands)\nRevenue $15,295\nGross Margin 4,171")
+
+    marked = next(t for t in detect_numeric_tokens(page.text) if t.text == "$15,295")
+    bare = next(t for t in detect_numeric_tokens(page.text) if t.text == "4,171")
+    assert bare.value_type == "currency"
+
+    assert classify_token(marked, page).label.startswith("15,295,000")
+    assert classify_token(bare, page).label.startswith("4,171,000")
 
 
 def test_classify_green_when_scale_confidently_resolved() -> None:

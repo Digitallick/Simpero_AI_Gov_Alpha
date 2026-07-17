@@ -18,12 +18,17 @@ dependencies = [
     "boto3>=1.34.0",
     "openpyxl>=3.1.5",
     "saq[redis,web]>=0.26.4",
-    "pypdfium2>=4.0.0",
-    "pillow>=11.0.0",
 ]
 
 [dependency-groups]
 dev = [
+    # DS-W3-8's inspection harness renders page overlays. It is a developer CLI
+    # (`python -m parser_service.inspect`), never imported by the service, so
+    # these stay out of [project].dependencies: the deployed image installs from
+    # there and would otherwise carry a PDF rasterizer and the whole imaging
+    # stack it can never invoke.
+    "pypdfium2>=4.0.0",
+    "pillow>=11.0.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
