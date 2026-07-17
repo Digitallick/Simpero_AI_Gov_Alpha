@@ -3,8 +3,8 @@
 Three layers, matching the rest of the parser suite:
 - Fast, CI-portable tests against synthetic PageIndex/TableRecord/XlsxSheetRecord
   fixtures (same convention as test_resolver.py/test_scale.py/test_elements.py).
-- A contract-conformance layer that runs every emitted fact through the real
-  Draft202012Validator against contracts/facts.schema.json -- the same
+- A contract-conformance layer that runs every emitted claim through the real
+  Draft202012Validator against contracts/claims.schema.json -- the same
   validator contracts/test_facts_contract.py uses -- so a drift between this
   emitter and the frozen C3 contract fails here, not silently downstream.
 - A local_corpus-marked acceptance test against the real PTL PDF-page 11
@@ -24,13 +24,13 @@ from jsonschema import Draft202012Validator
 from services.parser.parser_service.elements import ChartElement, TableElement
 from services.parser.parser_service.emit import (
     FLAG_TYPES,
-    Fact,
+    Claim,
     FlagLog,
     PdfLocation,
     XlsxLocation,
-    emit_pdf_fact,
-    emit_pdf_table_cell_fact,
-    emit_xlsx_fact,
+    emit_pdf_claim,
+    emit_pdf_table_cell_claim,
+    emit_xlsx_claim,
     log_chart_element_flags,
     log_table_element_flags,
 )
@@ -45,17 +45,17 @@ from services.parser.parser_service.schemas import (
 )
 from services.parser.parser_service.xlsx_parser import parse_xlsx_bytes
 
-SCHEMA_PATH = Path(__file__).parent.parent.parent / "contracts" / "facts.schema.json"
+SCHEMA_PATH = Path(__file__).parent.parent.parent / "contracts" / "claims.schema.json"
 
 
-def _pdf_location(fact: Fact) -> PdfLocation:
-    assert isinstance(fact.location, PdfLocation)
-    return fact.location
+def _pdf_location(claim: Claim) -> PdfLocation:
+    assert isinstance(claim.location, PdfLocation)
+    return claim.location
 
 
-def _xlsx_location(fact: Fact) -> XlsxLocation:
-    assert isinstance(fact.location, XlsxLocation)
-    return fact.location
+def _xlsx_location(claim: Claim) -> XlsxLocation:
+    assert isinstance(claim.location, XlsxLocation)
+    return claim.location
 
 
 @pytest.fixture(scope="module")
@@ -154,15 +154,15 @@ def _table(
 
 
 # --------------------------------------------------------------------------- #
-# emit_pdf_fact
+# emit_pdf_claim
 # --------------------------------------------------------------------------- #
 
 
-def test_emit_pdf_fact_extracted_with_page_header_scale() -> None:
+def test_emit_pdf_claim_extracted_with_page_header_scale() -> None:
     page = make_page("CAD (in Thousands)\nRevenue $15,295 total", page_no=11)
     flag_log = FlagLog(run_id="run-1")
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "PTL Group",
         "revenueTrailing5yrAvg",
         "$15,295",
@@ -172,20 +172,21 @@ def test_emit_pdf_fact_extracted_with_page_header_scale() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "extracted"
-    assert fact.value.normalized == 15_295_000.0
-    assert fact.value.scale_source == "page_header"
-    location = _pdf_location(fact)
+    assert claim.status == "proposed"
+    assert claim.value.normalized == 15_295_000.0
+    assert claim.value.scale_source == "page_header"
+    location = _pdf_location(claim)
+    assert location.char_start is not None and location.char_end is not None
     assert location.char_start == page.text.index("$15,295")
     assert location.char_end - location.char_start == len("$15,295")
     assert not flag_log.entries
 
 
-def test_emit_pdf_fact_missing_on_unresolved_quote_logs_flag() -> None:
+def test_emit_pdf_claim_missing_on_unresolved_quote_logs_flag() -> None:
     page = make_page("Revenue $15,295 total", page_no=3)
     flag_log = FlagLog(run_id="run-2")
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "PTL Group",
         "churnRate",
         "not-on-this-page",
@@ -195,12 +196,16 @@ def test_emit_pdf_fact_missing_on_unresolved_quote_logs_flag() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "missing"
-    assert fact.value.normalized is None
-    location = _pdf_location(fact)
-    assert location.char_start == 0
-    assert location.char_end == 0
-    assert fact.flags == ["quote_unresolved"]
+    assert claim.status == "missing"
+    assert claim.value.normalized is None
+    location = _pdf_location(claim)
+    # No span at all -- not a zero one. char_start=0/char_end=0 would be a
+    # citation to the top of the page, which is exactly what a claim asserting
+    # "not found" must not carry. The page it searched is still recorded.
+    assert location.char_start is None
+    assert location.char_end is None
+    assert location.page == 3
+    assert claim.flags == ["quote_unresolved"]
     assert len(flag_log.entries) == 1
     entry = flag_log.entries[0]
     assert entry.run_id == "run-2"
@@ -208,11 +213,11 @@ def test_emit_pdf_fact_missing_on_unresolved_quote_logs_flag() -> None:
     assert entry.stage == "claim_emission"
 
 
-def test_emit_pdf_fact_missing_on_zero_text_page() -> None:
+def test_emit_pdf_claim_missing_on_zero_text_page() -> None:
     page = make_page("   \n  ", page_no=4)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "someMetric",
         "$1",
@@ -222,16 +227,16 @@ def test_emit_pdf_fact_missing_on_zero_text_page() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "missing"
-    assert fact.flags == ["zero_text_page"]
+    assert claim.status == "missing"
+    assert claim.flags == ["zero_text_page"]
     assert flag_log.entries[0].flag_type == "zero_text_page"
 
 
-def test_emit_pdf_fact_ambiguous_quote_is_missing_not_fabricated() -> None:
+def test_emit_pdf_claim_ambiguous_quote_is_missing_not_fabricated() -> None:
     page = make_page("$15,295 here and $15,295 again", page_no=7)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "PTL Group",
         "revenue",
         "$15,295",
@@ -241,15 +246,15 @@ def test_emit_pdf_fact_ambiguous_quote_is_missing_not_fabricated() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "missing"
-    assert fact.value.normalized is None
+    assert claim.status == "missing"
+    assert claim.value.normalized is None
 
 
-def test_emit_pdf_fact_ambiguous_unit_when_header_has_no_currency_code() -> None:
+def test_emit_pdf_claim_ambiguous_unit_when_header_has_no_currency_code() -> None:
     page = make_page("(in Thousands)\nRevenue $4,000 total", page_no=1)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "revenue",
         "$4,000",
@@ -259,17 +264,17 @@ def test_emit_pdf_fact_ambiguous_unit_when_header_has_no_currency_code() -> None
         flag_log=flag_log,
     )
 
-    assert fact.value.scale_source == "page_header"
-    assert fact.value.unit is None
-    assert "ambiguous_unit" in fact.flags
+    assert claim.value.scale_source == "page_header"
+    assert claim.value.unit is None
+    assert "ambiguous_unit" in claim.flags
     assert any(e.flag_type == "ambiguous_unit" for e in flag_log.entries)
 
 
-def test_emit_pdf_fact_assumed_1x_flags_scale_assumed_not_ambiguous_unit() -> None:
+def test_emit_pdf_claim_assumed_1x_flags_scale_assumed_not_ambiguous_unit() -> None:
     page = make_page("Revenue $4,000 total", page_no=1)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "revenue",
         "$4,000",
@@ -279,15 +284,15 @@ def test_emit_pdf_fact_assumed_1x_flags_scale_assumed_not_ambiguous_unit() -> No
         flag_log=flag_log,
     )
 
-    assert fact.value.scale_source == "assumed_1x"
-    assert fact.flags == ["scale_assumed"]
+    assert claim.value.scale_source == "assumed_1x"
+    assert claim.flags == ["scale_assumed"]
 
 
-def test_emit_pdf_fact_text_value_type_skips_scale_and_stays_extracted() -> None:
+def test_emit_pdf_claim_text_value_type_skips_scale_and_stays_extracted() -> None:
     page = make_page("Segment: Industrial Services", page_no=2)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "segment",
         "Industrial Services",
@@ -297,16 +302,16 @@ def test_emit_pdf_fact_text_value_type_skips_scale_and_stays_extracted() -> None
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "extracted"
-    assert fact.value.normalized is None
-    assert fact.value.unit is None
+    assert claim.status == "proposed"
+    assert claim.value.normalized is None
+    assert claim.value.unit is None
 
 
-def test_emit_pdf_fact_bbox_uses_line_boxes() -> None:
+def test_emit_pdf_claim_bbox_uses_line_boxes() -> None:
     page = make_page("Revenue\n$15,295", page_no=1)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "revenue",
         "Revenue\n$15,295",
@@ -316,22 +321,22 @@ def test_emit_pdf_fact_bbox_uses_line_boxes() -> None:
         flag_log=flag_log,
     )
 
-    assert len(_pdf_location(fact).bbox) == 2
+    assert len(_pdf_location(claim).bbox) == 2
 
 
 # --------------------------------------------------------------------------- #
-# emit_pdf_table_cell_fact
+# emit_pdf_table_cell_claim
 # --------------------------------------------------------------------------- #
 
 
-def test_emit_pdf_table_cell_fact_missing_when_no_bbox_source() -> None:
+def test_emit_pdf_table_cell_claim_missing_when_no_bbox_source() -> None:
     header = _cell(0, 0, "CAD (in Thousands)")
     value = _cell(1, 0, "$15,295", x0=None, top=None, x1=None, bottom=None)
     table = _table([header, value], num_rows=2, num_cols=1)
     page = make_page("CAD (in Thousands)\n$15,295", page_no=11)
     flag_log = FlagLog()
 
-    fact = emit_pdf_table_cell_fact(
+    claim = emit_pdf_table_cell_claim(
         "PTL Group",
         "revenue",
         table,
@@ -342,19 +347,19 @@ def test_emit_pdf_table_cell_fact_missing_when_no_bbox_source() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "missing"
-    assert fact.flags == ["ambiguous_region_bounds"]
+    assert claim.status == "missing"
+    assert claim.flags == ["ambiguous_region_bounds"]
     assert flag_log.entries[0].flag_type == "ambiguous_region_bounds"
 
 
-def test_emit_pdf_table_cell_fact_uses_column_header_scale() -> None:
+def test_emit_pdf_table_cell_claim_uses_column_header_scale() -> None:
     header = _cell(0, 0, "CAD (in Thousands)")
     value = _cell(1, 0, "$15,295")
     table = _table([header, value], num_rows=2, num_cols=1)
     page = make_page("CAD (in Thousands)\n$15,295", page_no=11)
     flag_log = FlagLog()
 
-    fact = emit_pdf_table_cell_fact(
+    claim = emit_pdf_table_cell_claim(
         "PTL Group",
         "revenue",
         table,
@@ -365,13 +370,13 @@ def test_emit_pdf_table_cell_fact_uses_column_header_scale() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "extracted"
-    assert fact.value.scale_source == "column_header"
-    assert fact.value.normalized == 15_295_000.0
+    assert claim.status == "proposed"
+    assert claim.value.scale_source == "column_header"
+    assert claim.value.normalized == 15_295_000.0
 
 
 # --------------------------------------------------------------------------- #
-# emit_xlsx_fact
+# emit_xlsx_claim
 # --------------------------------------------------------------------------- #
 
 
@@ -388,7 +393,7 @@ def _find_cell(sheet: XlsxSheetRecord, ref: str) -> XlsxCellRecord:
     return next(c for c in sheet.cells if c.cell_ref == ref)
 
 
-def test_emit_xlsx_fact_persists_sheet_and_cell_ref() -> None:
+def test_emit_xlsx_claim_persists_sheet_and_cell_ref() -> None:
     def build(wb):
         ws = wb.active
         ws.title = "Financials"
@@ -398,7 +403,7 @@ def test_emit_xlsx_fact_persists_sheet_and_cell_ref() -> None:
     cell = _find_cell(sheet, "B14")
     flag_log = FlagLog()
 
-    fact = emit_xlsx_fact(
+    claim = emit_xlsx_claim(
         "TargetCo",
         "ebitdaFy2024",
         sheet,
@@ -408,14 +413,17 @@ def test_emit_xlsx_fact_persists_sheet_and_cell_ref() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "extracted"
-    location = _xlsx_location(fact)
+    # A literal cell is `cited` at parse time: reading the bytes IS the
+    # verification, so there is nothing left for Verify to check.
+    assert claim.status == "cited"
+    assert claim.verification_method == "direct_read"
+    location = _xlsx_location(claim)
     assert location.sheet == "Financials"
     assert location.cell_ref == "B14"
-    assert fact.value.normalized == 8_100_000.0
+    assert claim.value.normalized == 8_100_000.0
 
 
-def test_emit_xlsx_fact_formula_cell_is_stub_not_fabricated() -> None:
+def test_emit_xlsx_claim_formula_cell_is_proposed_not_fabricated() -> None:
     def build(wb):
         ws = wb.active
         ws.title = "Financials"
@@ -425,7 +433,7 @@ def test_emit_xlsx_fact_formula_cell_is_stub_not_fabricated() -> None:
     cell = _find_cell(sheet, "B1")
     flag_log = FlagLog()
 
-    fact = emit_xlsx_fact(
+    claim = emit_xlsx_claim(
         "TargetCo",
         "someFormula",
         sheet,
@@ -435,12 +443,16 @@ def test_emit_xlsx_fact_formula_cell_is_stub_not_fabricated() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "stub"
-    assert fact.value.normalized is None
-    assert fact.value.raw == "=1+1"
+    # A formula is `proposed`, never `cited`: the cell reference is exact but
+    # the value is pending re-execution, which happens outside this service.
+    # verification_method stays None -- no check has been run to record.
+    assert claim.status == "proposed"
+    assert claim.verification_method is None
+    assert claim.value.normalized is None
+    assert claim.value.raw == "=1+1"
 
 
-def test_emit_xlsx_fact_merged_cell_resolves_to_anchor() -> None:
+def test_emit_xlsx_claim_merged_cell_resolves_to_anchor() -> None:
     def build(wb):
         ws = wb.active
         ws.title = "Sheet1"
@@ -451,7 +463,7 @@ def test_emit_xlsx_fact_merged_cell_resolves_to_anchor() -> None:
     non_anchor = _find_cell(sheet, "B1")
     flag_log = FlagLog()
 
-    fact = emit_xlsx_fact(
+    claim = emit_xlsx_claim(
         "TargetCo",
         "someLabel",
         sheet,
@@ -461,10 +473,10 @@ def test_emit_xlsx_fact_merged_cell_resolves_to_anchor() -> None:
         flag_log=flag_log,
     )
 
-    assert _xlsx_location(fact).cell_ref == "A1"
+    assert _xlsx_location(claim).cell_ref == "A1"
 
 
-def test_emit_xlsx_fact_missing_text_cell() -> None:
+def test_emit_xlsx_claim_missing_text_cell() -> None:
     def build(wb):
         ws = wb.active
         ws.title = "Sheet1"
@@ -482,7 +494,7 @@ def test_emit_xlsx_fact_missing_text_cell() -> None:
     )
     flag_log = FlagLog()
 
-    fact = emit_xlsx_fact(
+    claim = emit_xlsx_claim(
         "TargetCo",
         "missingLabel",
         sheet,
@@ -492,8 +504,8 @@ def test_emit_xlsx_fact_missing_text_cell() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "missing"
-    assert fact.flags == ["quote_unresolved"]
+    assert claim.status == "missing"
+    assert claim.flags == ["quote_unresolved"]
 
 
 # --------------------------------------------------------------------------- #
@@ -556,15 +568,15 @@ def test_all_flag_types_constant_matches_schema_enum(validator: Draft202012Valid
 
 
 # --------------------------------------------------------------------------- #
-# Contract conformance -- every emitted fact must validate against the frozen
-# C3 schema, and a corrupted fact must fail loudly.
+# Contract conformance -- every emitted claim must validate against the frozen
+# C3 schema, and a corrupted claim must fail loudly.
 # --------------------------------------------------------------------------- #
 
 
 def test_extracted_pdf_fact_json_conforms_to_schema(validator: Draft202012Validator) -> None:
     page = make_page("CAD (in Thousands)\nRevenue $15,295 total", page_no=11)
     flag_log = FlagLog()
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "PTL Group",
         "revenueTrailing5yrAvg",
         "$15,295",
@@ -574,14 +586,14 @@ def test_extracted_pdf_fact_json_conforms_to_schema(validator: Draft202012Valida
         flag_log=flag_log,
     )
 
-    errors = sorted(validator.iter_errors(fact.to_json()), key=str)
+    errors = sorted(validator.iter_errors(claim.to_json()), key=str)
     assert not errors, "\n".join(e.message for e in errors)
 
 
 def test_missing_pdf_fact_json_conforms_to_schema(validator: Draft202012Validator) -> None:
     page = make_page("Revenue $15,295 total", page_no=3)
     flag_log = FlagLog()
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "churnRate",
         "not-on-this-page",
@@ -591,11 +603,11 @@ def test_missing_pdf_fact_json_conforms_to_schema(validator: Draft202012Validato
         flag_log=flag_log,
     )
 
-    errors = sorted(validator.iter_errors(fact.to_json()), key=str)
+    errors = sorted(validator.iter_errors(claim.to_json()), key=str)
     assert not errors, "\n".join(e.message for e in errors)
 
 
-def test_extracted_xlsx_fact_json_conforms_to_schema(validator: Draft202012Validator) -> None:
+def test_extracted_xlsx_claim_json_conforms_to_schema(validator: Draft202012Validator) -> None:
     def build(wb):
         ws = wb.active
         ws.title = "Financials"
@@ -604,7 +616,7 @@ def test_extracted_xlsx_fact_json_conforms_to_schema(validator: Draft202012Valid
     sheet = _xlsx_sheet(build)
     cell = _find_cell(sheet, "B14")
     flag_log = FlagLog()
-    fact = emit_xlsx_fact(
+    claim = emit_xlsx_claim(
         "TargetCo",
         "ebitdaFy2024",
         sheet,
@@ -614,11 +626,11 @@ def test_extracted_xlsx_fact_json_conforms_to_schema(validator: Draft202012Valid
         flag_log=flag_log,
     )
 
-    errors = sorted(validator.iter_errors(fact.to_json()), key=str)
+    errors = sorted(validator.iter_errors(claim.to_json()), key=str)
     assert not errors, "\n".join(e.message for e in errors)
 
 
-def test_stub_xlsx_formula_fact_json_conforms_to_schema(validator: Draft202012Validator) -> None:
+def test_stub_xlsx_formula_claim_json_conforms_to_schema(validator: Draft202012Validator) -> None:
     def build(wb):
         ws = wb.active
         ws.title = "Financials"
@@ -627,7 +639,7 @@ def test_stub_xlsx_formula_fact_json_conforms_to_schema(validator: Draft202012Va
     sheet = _xlsx_sheet(build)
     cell = _find_cell(sheet, "B1")
     flag_log = FlagLog()
-    fact = emit_xlsx_fact(
+    claim = emit_xlsx_claim(
         "TargetCo",
         "someFormula",
         sheet,
@@ -637,14 +649,14 @@ def test_stub_xlsx_formula_fact_json_conforms_to_schema(validator: Draft202012Va
         flag_log=flag_log,
     )
 
-    errors = sorted(validator.iter_errors(fact.to_json()), key=str)
+    errors = sorted(validator.iter_errors(claim.to_json()), key=str)
     assert not errors, "\n".join(e.message for e in errors)
 
 
 def test_corrupted_fact_fails_schema_validation_loudly(validator: Draft202012Validator) -> None:
     page = make_page("CAD (in Thousands)\nRevenue $15,295 total", page_no=11)
     flag_log = FlagLog()
-    fact_json = emit_pdf_fact(
+    fact_json = emit_pdf_claim(
         "PTL Group",
         "revenueTrailing5yrAvg",
         "$15,295",
@@ -662,28 +674,46 @@ def test_corrupted_fact_fails_schema_validation_loudly(validator: Draft202012Val
     assert list(validator.iter_errors(corrupted_value)), "an unknown scale_source must be rejected"
 
 
-def test_pydantic_boundary_rejects_unknown_confidence() -> None:
+def test_pydantic_boundary_rejects_unknown_status() -> None:
     from pydantic import ValidationError
 
-    from services.parser.parser_service.emit import Fact, FactValue, PdfLocation
+    from services.parser.parser_service.emit import Claim, ClaimValue, PdfLocation
 
     with pytest.raises(ValidationError):
-        Fact(
+        Claim(
             entity="e",
             attribute="a",
-            value=FactValue(raw="1", normalized=1.0, unit=None, value_type="count"),
+            value=ClaimValue(raw="1", normalized=1.0, unit=None, value_type="count"),
             location=PdfLocation(file="f.pdf", page=1, char_start=0, char_end=1),
-            confidence="probably_right",  # type: ignore[arg-type]
+            status="probably_right",  # type: ignore[arg-type]
+        )
+
+
+def test_pydantic_boundary_rejects_the_retired_confidence_key() -> None:
+    # `confidence` is not merely renamed, it is gone: it conflated "the extractor
+    # felt good" with "this was checked". extra="forbid" makes a stale caller
+    # fail here rather than silently emit a key the spine will not store.
+    from pydantic import ValidationError
+
+    from services.parser.parser_service.emit import Claim, ClaimValue, PdfLocation
+
+    with pytest.raises(ValidationError):
+        Claim(
+            entity="e",
+            attribute="a",
+            value=ClaimValue(raw="1", normalized=1.0, unit=None, value_type="count"),
+            location=PdfLocation(file="f.pdf", page=1, char_start=0, char_end=1),
+            confidence="extracted",  # type: ignore[call-arg]
         )
 
 
 def test_pydantic_boundary_rejects_unknown_field() -> None:
     from pydantic import ValidationError
 
-    from services.parser.parser_service.emit import FactValue
+    from services.parser.parser_service.emit import ClaimValue
 
     with pytest.raises(ValidationError):
-        FactValue(
+        ClaimValue(
             raw="1",
             normalized=1.0,
             unit=None,
@@ -707,7 +737,7 @@ def test_pydantic_boundary_rejects_unknown_field() -> None:
         ("1,200", "count", 1200.0, None),
     ],
 )
-def test_emit_pdf_fact_self_scaling_value_types(
+def test_emit_pdf_claim_self_scaling_value_types(
     quote: str, value_type, expected_normalized, expected_unit
 ) -> None:
     # Self-scaling types (percent/ratio/count) never consult a page/column
@@ -716,7 +746,7 @@ def test_emit_pdf_fact_self_scaling_value_types(
     page = make_page(f"CAD (in Thousands)\nMetric {quote} here", page_no=1)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "someMetric",
         quote,
@@ -726,16 +756,16 @@ def test_emit_pdf_fact_self_scaling_value_types(
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "extracted"
-    assert fact.value.scale_source == "explicit_in_value"
-    assert fact.value.unit == expected_unit
+    assert claim.status == "proposed"
+    assert claim.value.scale_source == "explicit_in_value"
+    assert claim.value.unit == expected_unit
     if expected_normalized is not None:
-        assert fact.value.normalized == expected_normalized
-    assert fact.flags == []
+        assert claim.value.normalized == expected_normalized
+    assert claim.flags == []
     assert not flag_log.entries
 
 
-def test_emit_pdf_fact_ratio_value_with_no_numeric_content_raises() -> None:
+def test_emit_pdf_claim_ratio_value_with_no_numeric_content_raises() -> None:
     # "ratio" with no numeric content in the raw text (e.g. a bare label
     # accidentally routed through as value_type="ratio") is a caller bug, not
     # a fail-closed case -- scale.py raises rather than silently emitting 0.
@@ -743,7 +773,7 @@ def test_emit_pdf_fact_ratio_value_with_no_numeric_content_raises() -> None:
     flag_log = FlagLog()
 
     with pytest.raises(ValueError):
-        emit_pdf_fact(
+        emit_pdf_claim(
             "TargetCo",
             "segment",
             "Industrial",
@@ -754,13 +784,13 @@ def test_emit_pdf_fact_ratio_value_with_no_numeric_content_raises() -> None:
         )
 
 
-def test_emit_pdf_fact_accounting_negative_currency() -> None:
+def test_emit_pdf_claim_accounting_negative_currency() -> None:
     # "($15,295)" is accounting notation for -15,295 -- must not be read as
     # positive (parens mean negative, not thousands grouping).
     page = make_page("Net loss ($15,295) for the period", page_no=1)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "netLoss",
         "($15,295)",
@@ -770,11 +800,11 @@ def test_emit_pdf_fact_accounting_negative_currency() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "extracted"
-    assert fact.value.normalized == -15_295.0
+    assert claim.status == "proposed"
+    assert claim.value.normalized == -15_295.0
 
 
-def test_emit_xlsx_fact_percent_ratio_count_date_value_types() -> None:
+def test_emit_xlsx_claim_percent_ratio_count_date_value_types() -> None:
     def build(wb):
         ws = wb.active
         ws.title = "Sheet1"
@@ -786,7 +816,7 @@ def test_emit_xlsx_fact_percent_ratio_count_date_value_types() -> None:
     sheet = _xlsx_sheet(build)
     flag_log = FlagLog()
 
-    percent_fact = emit_xlsx_fact(
+    percent_fact = emit_xlsx_claim(
         "TargetCo",
         "margin",
         sheet,
@@ -798,7 +828,7 @@ def test_emit_xlsx_fact_percent_ratio_count_date_value_types() -> None:
     assert percent_fact.value.normalized == 28.5
     assert percent_fact.value.unit == "%"
 
-    ratio_fact = emit_xlsx_fact(
+    ratio_fact = emit_xlsx_claim(
         "TargetCo",
         "leverage",
         sheet,
@@ -809,7 +839,7 @@ def test_emit_xlsx_fact_percent_ratio_count_date_value_types() -> None:
     )
     assert ratio_fact.value.unit == "ratio"
 
-    count_fact = emit_xlsx_fact(
+    count_fact = emit_xlsx_claim(
         "TargetCo",
         "headcount",
         sheet,
@@ -823,7 +853,7 @@ def test_emit_xlsx_fact_percent_ratio_count_date_value_types() -> None:
     assert not flag_log.entries
 
 
-def test_emit_xlsx_fact_negative_currency() -> None:
+def test_emit_xlsx_claim_negative_currency() -> None:
     def build(wb):
         ws = wb.active
         ws.title = "Sheet1"
@@ -832,7 +862,7 @@ def test_emit_xlsx_fact_negative_currency() -> None:
     sheet = _xlsx_sheet(build)
     flag_log = FlagLog()
 
-    fact = emit_xlsx_fact(
+    claim = emit_xlsx_claim(
         "TargetCo",
         "adjustment",
         sheet,
@@ -842,7 +872,7 @@ def test_emit_xlsx_fact_negative_currency() -> None:
         flag_log=flag_log,
     )
 
-    assert fact.value.normalized == -500_000.0
+    assert claim.value.normalized == -500_000.0
 
 
 def test_flag_log_to_json_shape_omits_none_detail() -> None:
@@ -866,7 +896,7 @@ def test_fact_to_json_omits_empty_flags_key() -> None:
     page = make_page("Segment: Industrial", page_no=1)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "segment",
         "Industrial",
@@ -876,14 +906,14 @@ def test_fact_to_json_omits_empty_flags_key() -> None:
         flag_log=flag_log,
     )
 
-    assert "flags" not in fact.to_json()
+    assert "flags" not in claim.to_json()
 
 
 def test_fact_to_json_includes_optional_passthrough_fields() -> None:
     page = make_page("Revenue $15,295 total", page_no=5)
     flag_log = FlagLog()
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "TargetCo",
         "revenue",
         "$15,295",
@@ -895,28 +925,34 @@ def test_fact_to_json_includes_optional_passthrough_fields() -> None:
         document_id="doc-123",
         document_name="CIM.pdf",
     )
-    fact_json = fact.to_json()
+    fact_json = claim.to_json()
 
     assert fact_json["section"] == "Income Statement"
     assert fact_json["location"]["document_id"] == "doc-123"
     assert fact_json["location"]["document_name"] == "CIM.pdf"
 
 
-def _assert_all_or_nothing_provenance(fact: Fact) -> None:
-    """The ticket's core invariant: a fact is either fully cited (extracted,
-    with a real char span/cell + non-null normalized whenever the value_type
-    has a magnitude) or written missing outright -- never something in
-    between."""
-    location = fact.location
-    if fact.confidence == "missing":
+def _assert_all_or_nothing_provenance(claim: Claim) -> None:
+    """The ticket's core invariant: a claim either carries a real citation (an
+    exact char span + bbox for PDF, an addressed cell for XLSX) or is written
+    missing outright -- never something in between.
+
+    A missing claim carries NO span. Not a zero span: char_start=0/char_end=0
+    is not an absence, it is a citation to the first character of the page, and
+    it would render as a highlight over unrelated text. The contract rejects it.
+    """
+    location = claim.location
+    if claim.status == "missing":
         if isinstance(location, PdfLocation):
-            assert location.char_start == 0
-            assert location.char_end == 0
+            assert location.char_start is None
+            assert location.char_end is None
+            assert location.page is not None
             assert not location.bbox
-        assert fact.value.normalized is None
-    elif fact.confidence == "extracted" and isinstance(location, PdfLocation):
-        assert location.char_end > location.char_start or fact.value.value_type == "text"
-        assert location.bbox or fact.value.value_type == "text"
+        assert claim.value.normalized is None
+    elif claim.status == "proposed" and isinstance(location, PdfLocation):
+        assert location.char_start is not None and location.char_end is not None
+        assert location.char_end > location.char_start or claim.value.value_type == "text"
+        assert location.bbox or claim.value.value_type == "text"
 
 
 def test_all_or_nothing_provenance_invariant_across_scenarios() -> None:
@@ -924,18 +960,18 @@ def test_all_or_nothing_provenance_invariant_across_scenarios() -> None:
     flag_log = FlagLog()
 
     scenarios = [
-        emit_pdf_fact(
+        emit_pdf_claim(
             "TargetCo", "a", "$15,295", page, value_type="currency", file="f.pdf", flag_log=flag_log
         ),
-        emit_pdf_fact(
+        emit_pdf_claim(
             "TargetCo", "b", "nowhere", page, value_type="currency", file="f.pdf", flag_log=flag_log
         ),
-        emit_pdf_fact(
+        emit_pdf_claim(
             "TargetCo", "c", "Revenue", page, value_type="text", file="f.pdf", flag_log=flag_log
         ),
     ]
-    for fact in scenarios:
-        _assert_all_or_nothing_provenance(fact)
+    for claim in scenarios:
+        _assert_all_or_nothing_provenance(claim)
 
 
 def test_full_run_integration_across_all_emission_paths() -> None:
@@ -945,7 +981,7 @@ def test_full_run_integration_across_all_emission_paths() -> None:
     flag_log = FlagLog(run_id="integration-run")
     page = make_page("Revenue $4,000 total", page_no=1)  # no header -> assumed_1x
 
-    prose_fact = emit_pdf_fact(
+    prose_claim = emit_pdf_claim(
         "TargetCo",
         "revenue",
         "$4,000",
@@ -970,7 +1006,7 @@ def test_full_run_integration_across_all_emission_paths() -> None:
         flags=["ragged_table_rows"],
     )
     log_table_element_flags(flag_log, "f.pdf", table_element)
-    table_cell_fact = emit_pdf_table_cell_fact(
+    table_cell_claim = emit_pdf_table_cell_claim(
         "TargetCo",
         "revenueFromTable",
         ragged_table,
@@ -987,7 +1023,7 @@ def test_full_run_integration_across_all_emission_paths() -> None:
         ws["B14"] = 8_100_000
 
     sheet = _xlsx_sheet(build)
-    xlsx_fact = emit_xlsx_fact(
+    xlsx_claim = emit_xlsx_claim(
         "TargetCo",
         "ebitda",
         sheet,
@@ -1006,27 +1042,32 @@ def test_full_run_integration_across_all_emission_paths() -> None:
     )
     log_chart_element_flags(flag_log, "f.pdf", chart_element)
 
-    # All four claims are independently valid facts.
-    for fact in (prose_fact, table_cell_fact, xlsx_fact):
-        assert fact.confidence == "extracted"
+    # Each lane earns the status it can honestly justify. PDF text is read but
+    # unchecked, so it is proposed; an XLSX literal cell is cited, because
+    # reading its bytes IS the verification and leaves nothing for Verify to do.
+    for claim in (prose_claim, table_cell_claim):
+        assert claim.status == "proposed"
+        assert claim.verification_method is None
+    assert xlsx_claim.status == "cited"
+    assert xlsx_claim.verification_method == "direct_read"
 
     # The run's flag log accumulated every flag from every source, in order,
-    # all stamped with the same run_id -- not just attached per-fact. The
+    # all stamped with the same run_id -- not just attached per-claim. The
     # XLSX cell also has no sheet-header scale phrase, so it independently
     # hits assumed_1x too.
     flag_types = [e.flag_type for e in flag_log.entries]
     assert flag_types == [
-        "scale_assumed",  # prose_fact: no page header
+        "scale_assumed",  # prose_claim: no page header
         "ragged_table_rows",  # table_element
-        "scale_assumed",  # xlsx_fact: no sheet header
+        "scale_assumed",  # xlsx_claim: no sheet header
         "chart_data_not_extracted",  # chart_element
     ]
     assert all(e.run_id == "integration-run" for e in flag_log.entries)
-    assert "scale_assumed" in prose_fact.flags
+    assert "scale_assumed" in prose_claim.flags
     # The ragged-table flag lives on the TableElement / run log, not
-    # duplicated onto the individual cell fact it produced -- see the
+    # duplicated onto the individual cell claim it produced -- see the
     # element-vs-claim flag scoping note.
-    assert "ragged_table_rows" not in table_cell_fact.flags
+    assert "ragged_table_rows" not in table_cell_claim.flags
 
 
 # --------------------------------------------------------------------------- #
@@ -1058,7 +1099,7 @@ def test_ptl_page_11_revenue_claim_persists_with_full_provenance(
     page = result.pages[10]  # PDF page index 11 (0-indexed 10): income statement.
     flag_log = FlagLog(run_id="ptl-acceptance-run")
 
-    fact = emit_pdf_fact(
+    claim = emit_pdf_claim(
         "PTL Group",
         "revenueTrailing5yrAvg",
         "$15,295",
@@ -1068,13 +1109,13 @@ def test_ptl_page_11_revenue_claim_persists_with_full_provenance(
         flag_log=flag_log,
     )
 
-    assert fact.confidence == "extracted"
-    assert fact.value.normalized == 15_295_000.0
-    assert fact.value.scale_source == "page_header"
-    location = _pdf_location(fact)
-    assert location.char_start is not None
+    assert claim.status == "proposed"
+    assert claim.value.normalized == 15_295_000.0
+    assert claim.value.scale_source == "page_header"
+    location = _pdf_location(claim)
+    assert location.char_start is not None and location.char_end is not None
     assert location.char_end - location.char_start == len("$15,295")
     assert location.bbox
 
-    errors = sorted(validator.iter_errors(fact.to_json()), key=str)
+    errors = sorted(validator.iter_errors(claim.to_json()), key=str)
     assert not errors, "\n".join(e.message for e in errors)
