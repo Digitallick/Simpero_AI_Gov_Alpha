@@ -70,10 +70,12 @@ jobs:
         run: uv run pyright
 
   # ---------------------------------------------------------------------------
-  # 3. TEST — pytest. THE most important job for this project.
-  #    Guards the correctness-critical invariants so a refactor can't silently
-  #    break provenance: DS-1 len(text)==len(char_map), the resolver's
-  #    fail-closed cases, the scale tests.
+  # 3. TEST — pytest.
+  #    The parse-service unit tests (DS-1 len(text)==len(char_map) invariant,
+  #    resolver fail-closed cases, scale tests) moved out with
+  #    services/parser/tests/parser into Simpero_Gov_AI_Services — run its own
+  #    CI, not this one. What remains here is app/ + the claims-schema
+  #    contract test (contracts/, still duplicated in both repos).
   # ---------------------------------------------------------------------------
   test:
     name: Test (pytest)
@@ -103,8 +105,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      # No DB required for the parse-service unit tests (invariant, resolver,
-      # scale). If/when tests need Postgres, add a services: postgres block here.
+      # Remaining tests here don't open a DB (see comment above). If/when
+      # tests need Postgres, add a services: postgres block here.
       - name: pytest
         run: uv run pytest -q --maxfail=1
 
@@ -147,10 +149,10 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # 5. DEPENDENCY / VULNERABILITY CHECK — pip-audit over the resolved env.
-  #    Docling (arriving with the parse service) pulls a large ML dep tree;
-  #    surface known CVEs in transitive deps. Non-blocking for now
-  #    (continue-on-error) so a brand-new advisory doesn't wedge every PR —
-  #    flip to blocking once the dep tree is stable.
+  #    Non-blocking for now (continue-on-error) so a brand-new advisory
+  #    doesn't wedge every PR — flip to blocking once the dep tree is stable.
+  #    (Docling and its large ML dep tree moved out with services/parser —
+  #    see Simpero_Gov_AI_Services — so this app's own audit surface is small.)
   # ---------------------------------------------------------------------------
   audit:
     name: Dependency audit (pip-audit)
@@ -174,12 +176,13 @@ jobs:
         run: uv run --with pip-audit pip-audit
 
   # ---------------------------------------------------------------------------
-  # 7. FACTS-SCHEMA CONTRACT VALIDATION — the project-specific check.
-  #    The Python parse service emits facts as JSON across the seam to the TS
-  #    app. This job validates that emitted shape against the shared JSON
-  #    Schema (the C3 contract), so a silent drift at the seam — the exact
-  #    failure mode the product exists to prevent — fails CI instead of
-  #    reaching production. Runs on every PR; cheap.
+  # 7. CLAIMS-SCHEMA CONTRACT VALIDATION — the project-specific check.
+  #    The Python parse service (now Simpero_Gov_AI_Services) emits claims as
+  #    JSON across the seam to this app / the TS app. This job validates that
+  #    emitted shape against the shared JSON Schema (the C3 contract, owned by
+  #    Simpero_Gov_AI_Services — this repo pins a copy), so a silent drift at
+  #    the seam — the exact failure mode the product exists to prevent — fails
+  #    CI instead of reaching production. Runs on every PR; cheap.
   #    (Secret scanning = job #5 in the plan — that's a repo *setting*
   #    -- GitHub native secret scanning + push protection -- not a workflow.
   #    See ci-setup-notes.md.)

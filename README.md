@@ -58,3 +58,14 @@ Each authenticated request issues `SET LOCAL app.org_id = '<org_id>'` as the fir
 ### Audit log immutability
 
 `UPDATE` and `DELETE` on `audit_log` are revoked from `dd_app` at the DB level. App code does not enforce this.
+
+### Document parsing lives in a separate repo
+
+Docling-based PDF/XLSX/DOCX parsing moved out of this repo into its own
+standalone FastAPI service, **Simpero_Gov_AI_Services** (split out
+2026-07-17, history preserved via `git filter-repo`). This app does not
+parse documents itself. That service currently exposes only a synchronous
+`POST /parse` HTTP endpoint — this app has no live integration with it yet
+(`app/jobs/parse_client.py` is unwired scaffolding for a possible future
+async path; see CLAUDE.md's "Document parsing" section before relying on    
+it).

@@ -71,6 +71,43 @@ Background jobs run on [SAQ](https://github.com/tobymao/saq), backed by a Digita
 - Run `uv run saq app.jobs.worker.settings --web` for the built-in dashboard (port 8080) — do not expose this port publicly without auth in front of it.
 - `docker-compose.yml`'s `worker` service runs the SAQ worker in its own container (same image as `app`, command overridden) — the `app` service only enqueues jobs, it never executes them.
 
+### Document parsing: split out into Simpero_Gov_AI_Services (2026-07-17)
+
+Document parsing (Docling-based PDF/XLSX/DOCX parsing, formerly
+`services/parser` + `tests/parser` in this repo) now lives in its own
+standalone repo, **Simpero_Gov_AI_Services**, as a separate FastAPI service
+with its own Dockerfile, dependency lockfile, and CI (the actual split was
+done with `git filter-repo`, preserving history — see that repo's own
+commits). This app no longer imports Docling, pypdf, openpyxl, or boto3 —
+see the note next to `dependencies` in `pyproject.toml`.
+
+**Integration today: none, wired up.** As of this repo's copy of
+Simpero_Gov_AI_Services, that service exposes only a synchronous
+`POST /parse` HTTP endpoint (bytes in, parsed index out) — it has no queue,
+no Valkey/SAQ dependency, and no worker process. `app/jobs/parse_client.py`
+in this app (added 2026-07-17) was built against an earlier assumption of an
+async SAQ worker on a shared `"parse"` Valkey queue; that worker does not
+exist in the actual Simpero_Gov_AI_Services codebase, so `parse_client.py`
+currently enqueues jobs nothing will ever consume. It is not called from
+anywhere in `app/api/` yet either. Treat it as scaffolding for a decision
+that hasn't been made, not as a working integration — before using it,
+confirm with the team whether the parser will grow an async worker to match
+it, or whether this app should instead call `POST /parse` synchronously
+(simpler, matches what actually exists today, but ties the request to
+Docling's per-document parse latency).
+
+- **Claims schema.** `contracts/claims.schema.json` is duplicated in both
+  repos — Simpero_Gov_AI_Services owns it and validates against it in CI;
+  this repo pins a copy and runs the same contract test
+  (`contracts/test_claims_contract.py`) against its own copy. No shared
+  package owns it yet — if it changes, update both by hand; nothing catches
+  drift across the two repos automatically.
+
+A mismatch in the queue name is silent: a job gets enqueued and simply never
+picked up, with no error surfaced on either side. `tests/test_parse_client.py`
+pins `PARSE_QUEUE_NAME == "parse"` as a guard, but it can't catch drift on
+the other repo's side — check both when touching this contract.
+
 ### Request flow
 
 ```
