@@ -101,39 +101,41 @@ This pulls `postgres:16` and `valkey:8` (first run only), starts them, waits unt
 
 **Confidentiality:** the CIM you pass is copied into `sandbox/cim/`, which is **gitignored and never committed**. Real deal documents are confidential — don't commit them. No sample document ships in this repo; bring your own (any financial-statement PDF with a table under a scale header works well — income statements are ideal).
 
-Expected output:
+`run.sh` narrates each step and, at the end, **prints the claims table it just wrote** so you can see exactly what landed:
 
 ```
-==> [1/2] parse + extract + emit  (parse service)
-emitted 24 claims (24 cited, 0 missing), 0 flags
-==> [2/2] ingest into the local claims spine  (backend, as dd_app)
-24 claims validated against the contract.
-dd_app, tenant 'sandbox_demo': sees 24 claims (inserted 24).
-dd_app, a DIFFERENT tenant: sees 0 claims (RLS isolation).
---commit: persisting.
+[1/4] Copying the CIM into sandbox/cim/  (gitignored, never committed)   ✓
+[2/4] Parse → extract → emit   (parse service; docling, no database)
+      ✓ emitted 24 claims (24 cited, 0 missing), 0 flags
+[3/4] Ingest into the local claims spine   (backend, as the dd_app app role)
+      24 claims validated against the contract.
+      dd_app, tenant 'sandbox_demo': sees 24 claims (inserted 24).
+      dd_app, a DIFFERENT tenant: sees 0 claims (RLS isolation).
+[4/4] Reading back the claims table
+     entity     |      attribute      |   raw   | normalized | unit | page |  span   |  status
+ ---------------+---------------------+---------+------------+------+------+---------+----------
+  Target Co     | Revenue | FY2023    | $19,850 | 19850000.0 | USD  |    1 | 209-216 | proposed
+  Target Co     | Gross Margin | FY23 | 9,150   | 9150000.0  | USD  |    1 | 295-300 | proposed
+  Target Co     | Gross Margin % | F.. | 46.1%   | 46.1       | %    |    1 | 335-340 | proposed
+      24 claims  |  proposed  |  scale from: explicit_in_value, page_header
 ```
 
-That last pair of lines is the tenant isolation proof: the owning tenant sees the claims, a different tenant sees none — enforced by Postgres row-level security, exercised as the `dd_app` app role.
+Read it top to bottom:
+
+- The `dd_app sees 24 / a different tenant sees 0` pair is the **tenant isolation proof** — enforced by Postgres row-level security, exercised as the `dd_app` app role.
+- Every row carries the raw printed value, the scaled `normalized` number, an exact character `span`, and `status = proposed` (cited, pending verification). None is fabricated.
+- The scaling is visible: currency is scaled from the `(in Thousands)` header (`$19,850` → 19,850,000), a bare `9,150` is scaled the same way, and a percent is left alone (`46.1%` → 46.1). That last distinction is the point of the value-type gate.
 
 ---
 
-## 4. Inspect the claims
+## 4. Query the claims yourself
+
+`run.sh` already printed the table. To poke at it further:
 
 ```bash
-docker exec -it simpero-sandbox-postgres-1 psql -U doadmin -d simpero -c \
-  "SELECT entity, left(attribute,30) AS attr, value->>'raw' AS raw,
-          value->>'normalized' AS normalized, page, status
-   FROM claims ORDER BY page, char_start LIMIT 20;"
+docker compose -f sandbox/docker-compose.yml exec postgres \
+  psql -U doadmin -d simpero -c "SELECT attribute, value->>'normalized' FROM claims;"
 ```
-
-```
-    entity     |            attr            |   raw   | normalized | page |  status
----------------+----------------------------+---------+------------+------+----------
- Target Co     | Revenue | FY2023           | $19,850 | 19850000.0 |    1 | proposed
- Target Co     | Cost of Goods Sold | FY202 | 7,100   | 7100000.0  |    1 | proposed
-```
-
-Each row carries the raw printed value, the header-scaled number, the page it came from, and `status = proposed` (cited, pending verification). Note the second row: `7,100` with no dollar sign is still scaled to 7,100,000 from the `(in Thousands)` header. Every claim has an exact character span and bbox; none is fabricated.
 
 ---
 
