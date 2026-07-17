@@ -3618,6 +3618,7 @@ dev = [
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "python-docx" },
     { name = "reportlab" },
     { name = "ruff" },
 ]
@@ -3649,6 +3650,7 @@ dev = [
     { name = "pyright", specifier = ">=1.1.411" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "python-docx", specifier = ">=1.2.0" },
     { name = "reportlab", specifier = ">=4.4.0" },
     { name = "ruff", specifier = ">=0.6.0" },
 ]
