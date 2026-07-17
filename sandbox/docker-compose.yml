@@ -16,7 +16,11 @@ name: simpero-sandbox
 
 services:
   postgres:
-    image: postgres:16
+    # The official pgvector image: stock postgres:16 with the pgvector extension
+    # available. Plain postgres:16 does NOT ship it, so the enable-pgvector
+    # migration would fail here. This keeps the sandbox reproducible with the
+    # same extension the cloud database has.
+    image: pgvector/pgvector:pg16
     environment:
       # doadmin becomes the superuser that owns the simpero database and runs
       # migrations -- the same role the production cluster uses for DDL. The
