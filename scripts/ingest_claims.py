@@ -100,9 +100,7 @@ async def _run(payload: dict, org_key: str, commit: bool) -> None:
         # comes from signup), and re-running the demo must not trip the unique
         # clerk_org_id. The SELECT runs under RLS, so it can only ever find the
         # current tenant's own row.
-        org = await session.scalar(
-            select(Organisation).where(Organisation.clerk_org_id == org_key)
-        )
+        org = await session.scalar(select(Organisation).where(Organisation.clerk_org_id == org_key))
         if org is None:
             # WITH CHECK passes because clerk_org_id equals app.org_id, set above.
             org = Organisation(
