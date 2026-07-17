@@ -3613,6 +3613,8 @@ dependencies = [
 dev = [
     { name = "httpx" },
     { name = "jsonschema" },
+    { name = "pillow" },
+    { name = "pypdfium2" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -3643,6 +3645,8 @@ requires-dist = [
 dev = [
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jsonschema", specifier = ">=4.0.0" },
+    { name = "pillow", specifier = ">=11.0.0" },
+    { name = "pypdfium2", specifier = ">=4.0.0" },
     { name = "pyright", specifier = ">=1.1.411" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.23.0" },

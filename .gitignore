@@ -19,6 +19,10 @@ docs/
 # Parser runtime cache (regenerated locally per-PDF, not source)
 services/parser/cache/
 
+# DS-W3-8 visual inspection harness output -- regenerated debug overlays, may
+# contain confidential CIM page content, never source.
+services/parser/parser_service/out/
+
 # Local test PDFs — may contain confidential client documents (CIMs, financials).
 # Never commit real deal documents to this repo.
 tests/test_data/
