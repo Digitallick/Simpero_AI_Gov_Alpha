@@ -73,7 +73,7 @@ cd Simpero_AI_Gov_Alpha
 ./sandbox/up.sh
 ```
 
-This pulls `postgres:16` and `valkey:8` (first run only), starts them, waits until they're healthy, and applies the migrations. You should see:
+This pulls `pgvector/pgvector:pg16` (stock Postgres 16 with the pgvector extension bundled — the cloud database has pgvector, so the sandbox matches it) and `valkey:8`, starts them, waits until they're healthy, and applies the migrations. You should see:
 
 ```
 ==> starting Postgres + Valkey
