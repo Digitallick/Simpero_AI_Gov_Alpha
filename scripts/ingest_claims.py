@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import uuid
 from pathlib import Path
 
 from sqlalchemy import func, select, text
@@ -42,14 +43,24 @@ _CONTRACT = Path(__file__).parent.parent / "contracts" / "claims.schema.json"
 _LOCATION_COLUMNS = ("page", "char_start", "char_end", "bbox", "sheet", "cell_ref", "paragraph")
 
 
-def _row_from_claim(claim: dict, org_id: int) -> Claim:
+def _row_from_claim(claim: dict, org_id: int, session_id: uuid.UUID) -> Claim:
     """One seam-JSON claim -> one Claim ORM row, flattening the location."""
     location = claim["location"]
     row = Claim(
         org_id=org_id,
+        # Which run produced this claim. Tagging every row makes two extraction
+        # runs over the same document independently queryable in one table --
+        # which is what a golden-set diff needs: compare THIS run against THAT
+        # one, rather than against whatever happens to be in the table.
+        session_id=session_id,
         entity=claim["entity"],
         attribute=claim["attribute"],
         value=claim["value"],
+        # The parse service's emit.py cannot carry a period yet, but the
+        # contract and this table both have the columns, so anything upstream
+        # that did determine one is preserved rather than dropped on the floor.
+        period_year=claim.get("period_year"),
+        period_kind=claim.get("period_kind"),
         status=claim["status"],
         verification_method=claim.get("verification_method"),
         section=claim.get("section"),
@@ -77,10 +88,11 @@ def _validate(claims: list[dict]) -> None:
             raise SystemExit(f"claim {i} violates the contract: {errors[0].message}")
 
 
-async def _run(payload: dict, org_key: str, commit: bool) -> None:
+async def _run(payload: dict, org_key: str, commit: bool, session_id: uuid.UUID) -> None:
     claims = payload["claims"]
     _validate(claims)
     print(f"{len(claims)} claims validated against the contract.")
+    print(f"session_id for this run: {session_id}")
 
     async with AsyncSessionLocal() as session, session.begin():
         # Establish the app's identity and tenant FIRST, so the entire insert
@@ -110,7 +122,7 @@ async def _run(payload: dict, org_key: str, commit: bool) -> None:
             await session.flush()  # assigns org.id
         org_id = org.id
 
-        session.add_all(_row_from_claim(c, org_id) for c in claims)
+        session.add_all(_row_from_claim(c, org_id, session_id) for c in claims)
         await session.flush()
 
         # Read back as dd_app under this tenant: the app's own view.
@@ -138,11 +150,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("claims_json", type=Path)
     parser.add_argument("--org-key", required=True, help="clerk_org_id for the demo tenant.")
     parser.add_argument("--commit", action="store_true", help="Persist. Default is a dry run.")
+    parser.add_argument(
+        "--session-id",
+        help="Tag every claim with this run id (UUID). Defaults to a fresh one. "
+        "Use it to compare two extraction runs over the same document.",
+    )
     args = parser.parse_args(argv)
 
     payload = json.loads(args.claims_json.read_text())
+    session_id = uuid.UUID(args.session_id) if args.session_id else uuid.uuid4()
     try:
-        asyncio.run(_run(payload, args.org_key, args.commit))
+        asyncio.run(_run(payload, args.org_key, args.commit, session_id))
     except _Rollback:
         print("dry run: transaction rolled back, database unchanged. Pass --commit to persist.")
 
