@@ -44,9 +44,7 @@ class Funds(Base):
 class Users(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(
-        Integer, primary_key=True, index=True, nullable=False
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, nullable=False)
     org_id: Mapped[int] = mapped_column(
         Integer, ForeignKey(Organisation.id), index=True, nullable=False
     )

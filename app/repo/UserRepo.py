@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.organisation import Users
 from app.repo.BaseRepo import BaseRepo
-
 
 
 class UserRepo(BaseRepo[Users, dict]):
