@@ -45,9 +45,7 @@ async def _ensure_user_provisioned(session: AsyncSession, claims: dict[str, Any]
     name/email stay NULL here — the token doesn't carry them; the frontend
     pushes them via POST /auth/sync-profile after login.
     """
-    user_id = await session.scalar(
-        select(Users.id).where(Users.clerk_user_id == claims["user_id"])
-    )
+    user_id = await session.scalar(select(Users.id).where(Users.clerk_user_id == claims["user_id"]))
     if user_id is not None:
         return
 
