@@ -1,0 +1,113 @@
+# Local dev server — full stack on your machine, zero cloud dependencies.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# vs the other compose files:
+#   docker-compose.yml          production-ish: PgBouncer -> DigitalOcean, needs cluster credentials
+#   sandbox/docker-compose.yml  infra only (Postgres+Valkey) for the claims-pipeline scripts
+#   this file                   infra + migrations + API server (hot reload) + SAQ worker
+#
+# Reuses the sandbox's role-init script, so the same two roles exist as in
+# production: doadmin (owns the DB, runs migrations) and dd_app (RLS-restricted
+# runtime role). Passwords are the sandbox's well-known local-only values.
+#
+# Secrets (CLERK_*) still come from .env via env_file; the `environment:` blocks
+# below override just the connection URLs to point at these local containers.
+# No PgBouncer here — SET LOCAL tenant scoping works the same on a direct
+# connection; the pooler only matters for connection scaling in production.
+
+name: simpero-dev
+
+services:
+  postgres:
+    # Same image as the sandbox: stock postgres:16 + pgvector (a migration enables it).
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: doadmin
+      POSTGRES_PASSWORD: sandbox_doadmin
+      POSTGRES_DB: simpero
+    ports:
+      # 5434 on the host: clear of a local Postgres (5432) and the sandbox (5433).
+      - "5434:5432"
+    volumes:
+      - simpero_dev_pgdata:/var/lib/postgresql/data
+      # Creates dd_app on first init — shared with the sandbox on purpose.
+      - ./sandbox/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doadmin -d simpero"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  valkey:
+    image: valkey/valkey:8
+    ports:
+      # 6381 on the host: clear of a local Redis (6379) and the sandbox (6380).
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: applies migrations as doadmin, then exits. The image only ships
+  # app/, so alembic/ and alembic.ini are bind-mounted in.
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - .env
+    environment:
+      ALEMBIC_DATABASE_URL: postgresql+asyncpg://doadmin:sandbox_doadmin@postgres:5432/simpero
+    volumes:
+      - ./alembic:/app/alembic:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build: .
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env  # CLERK_JWKS_URL, CLERK_SECRET_KEY, CORS_ALLOWED_ORIGINS, ...
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dd_app:sandbox_dd_app@postgres:5432/simpero
+      ALEMBIC_DATABASE_URL: postgresql+asyncpg://doadmin:sandbox_doadmin@postgres:5432/simpero
+      VALKEY_URL: redis://valkey:6379
+      ENVIRONMENT: development
+    volumes:
+      # Hot reload: edit app/ on the host, uvicorn --reload picks it up.
+      - ./app:/app/app:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["saq", "app.jobs.worker.settings"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dd_app:sandbox_dd_app@postgres:5432/simpero
+      ALEMBIC_DATABASE_URL: postgresql+asyncpg://doadmin:sandbox_doadmin@postgres:5432/simpero
+      VALKEY_URL: redis://valkey:6379
+      ENVIRONMENT: development
+    volumes:
+      - ./app:/app/app:ro
+    depends_on:
+      valkey:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  simpero_dev_pgdata:
