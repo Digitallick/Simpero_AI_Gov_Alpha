@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, deals, health
+from app.api import auth, deals, health, history, investment_profile, logs
 from app.core.config import get_settings
 from app.core.exceptions import (
     AuthenticationError,
@@ -44,9 +44,16 @@ async def tenant_context_error_handler(request: Request, exc: TenantContextError
     return JSONResponse(status_code=401, content={"detail": str(exc)})
 
 
-app.include_router(health.router)
-app.include_router(deals.router)
-app.include_router(auth.router)
+# Single /api mount point, kept here rather than per-router: the frontend's
+# dev proxy (vite.config.ts) and documented prod ingress both forward only
+# /api/* to this service — every route must live under it.
+API_PREFIX = "/api"
+app.include_router(health.router, prefix=API_PREFIX)
+app.include_router(deals.router, prefix=API_PREFIX)
+app.include_router(auth.router, prefix=API_PREFIX)
+app.include_router(history.router, prefix=API_PREFIX)
+app.include_router(investment_profile.router, prefix=API_PREFIX)
+app.include_router(logs.router, prefix=API_PREFIX)
 
 # Do not open DB connections at startup. PgBouncer transaction pooling requires sessions to be
 # opened per-transaction, not per-application-lifecycle. A startup DB connection would hold a
