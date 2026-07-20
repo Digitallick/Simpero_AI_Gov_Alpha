@@ -26,3 +26,4 @@ tests/diagnose_ds1_deep.py
 tests/diagnose_ds1_instrumented.py
 ,claude
 .claude-flow
+sandbox/cim/*
