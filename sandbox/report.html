@@ -64,6 +64,17 @@
           border: 1px solid var(--teal); border-radius: 99px; padding: .05rem .4rem;
           vertical-align: middle; white-space: nowrap; }
   tr.qual td:first-child { border-left: 3px solid var(--teal); }
+  .tsec { margin-top: 1.9rem; }
+  .sechead { display: flex; align-items: baseline; gap: .9rem; margin: 0 0 .55rem; }
+  .secttl { font: 500 1.15rem/1 var(--serif); color: var(--ink); margin: 0; }
+  .secttl .cnt { color: var(--mut); font-weight: 400; margin-left: .45rem;
+                 font-size: .95rem; }
+  .showing { font-size: .82rem; color: var(--mut); white-space: nowrap; }
+  .showing.muted { font-style: italic; }
+  /* max-width on a <td> is unreliable under table-layout:auto, so the quote
+     text lives in an inner block that wraps to a fixed cap. */
+  td.quote { color: var(--ink); }
+  td.quote .quotebox { max-width: 640px; white-space: normal; overflow-wrap: anywhere; }
   #showing { font-size: .82rem; color: var(--mut); white-space: nowrap; }
 
   .tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line);
@@ -136,22 +147,40 @@
       <input id="q" type="search" placeholder="Search any column — attribute, raw, page, status…">
     </div>
     <span id="pills"></span>
-    <span id="kindpills"></span>
-    <span id="showing"></span>
   </div>
 
-  <div class="tablewrap" id="tablewrap" hidden><table>
-  <thead><tr><th>attribute</th><th>raw</th><th class="num">normalized</th>
-  <th>unit</th><th>scale</th><th class="num">page&nbsp;↑</th><th class="num">span</th>
-  <th>status</th></tr></thead>
-  <tbody id="tbody"></tbody>
-  </table></div>
+  <!-- FIGURES: claims that carry a magnitude. -->
+  <section class="tsec" id="figsec" hidden>
+    <div class="sechead">
+      <h2 class="secttl">Figures<span class="cnt" id="figcount"></span></h2>
+      <span class="showing" id="figshowing"></span>
+    </div>
+    <div class="tablewrap"><table>
+    <thead><tr><th>attribute</th><th>raw</th><th class="num">normalized</th>
+    <th>unit</th><th>scale</th><th class="num">page&nbsp;↑</th><th class="num">span</th>
+    <th>status</th></tr></thead>
+    <tbody id="figbody"></tbody>
+    </table></div>
+    <div class="pager" id="figpager" hidden>
+      <button id="figprev">‹ Prev</button>
+      <span id="figpageinfo"></span>
+      <button id="fignext">Next ›</button>
+    </div>
+  </section>
 
-  <div class="pager" id="pager" hidden>
-    <button id="prev">‹ Prev</button>
-    <span id="pageinfo"></span>
-    <button id="next">Next ›</button>
-  </div>
+  <!-- ASSERTIONS: qualitative claims. No magnitude, so no normalized/unit/scale
+       columns — a class and the quote instead. -->
+  <section class="tsec" id="asrtsec" hidden>
+    <div class="sechead">
+      <h2 class="secttl">Assertions<span class="cnt" id="asrtcount"></span></h2>
+      <span class="showing muted">no magnitude — an assertion, cited to its span</span>
+    </div>
+    <div class="tablewrap"><table>
+    <thead><tr><th>attribute</th><th>class</th><th>quote</th>
+    <th class="num">page&nbsp;↑</th><th class="num">span</th><th>status</th></tr></thead>
+    <tbody id="asrtbody"></tbody>
+    </table></div>
+  </section>
 </div>
 
 <div id="modal" role="dialog" aria-modal="true">
@@ -244,67 +273,99 @@
   $("backdrop").addEventListener("click", closeModal);
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
 
-  // ---------- table ----------
+  // ---------- tables ----------
+  // Two separate tables, because the two claim kinds answer different questions.
+  // A figure has a magnitude (normalized/unit/scale); an assertion has none, so
+  // those columns would be dead weight -- it carries a class and a quote instead.
   function td(text, cls) {
     const el = document.createElement("td");
     if (cls) el.className = cls;
     el.textContent = text == null || text === "" ? "" : String(text);
     return el;
   }
-  const tbody = $("tbody"), rows = [];
-  R.claims.forEach((c, i) => {
-    const v = c.value || {};
-    const span = c.char_start == null ? "" : c.char_start + "–" + c.char_end;
-    const isQual = c.claim_kind === "qualitative";
-    const tr = document.createElement("tr");
-    tr.className = c.status + (isQual ? " qual" : "");
-    const attrCell = td(c.attribute);
-    if (isQual && c.assertion_class) {
-      const tag = document.createElement("span");
-      tag.className = "qtag";
-      tag.textContent = c.assertion_class.replace(/_/g, " ");
-      attrCell.appendChild(tag);
-    }
-    tr.appendChild(attrCell);
-    tr.appendChild(td(v.raw));
-    tr.appendChild(td(typeof v.normalized === "number"
-      ? v.normalized.toLocaleString("en-US", { maximumFractionDigits: 4 })
-      : v.normalized, "num"));
-    tr.appendChild(td(v.unit || "—", v.unit ? "" : "mut"));
-    tr.appendChild(td(v.scale_source, "mut"));
-
-    const pageCell = document.createElement("td");
-    pageCell.className = "num";
+  function pageCell(c, i) {
+    const cell = document.createElement("td");
+    cell.className = "num";
     if (c.bbox && R.pages[c.page]) {
       const a = document.createElement("a");
       a.className = "pg";
       a.textContent = c.page;
       a.addEventListener("click", e => { e.preventDefault(); openModal(i); });
-      pageCell.appendChild(a);
+      cell.appendChild(a);
     } else {
-      pageCell.textContent = c.page == null ? "" : c.page;
+      cell.textContent = c.page == null ? "" : c.page;
     }
-    tr.appendChild(pageCell);
-
-    tr.appendChild(td(span, "num"));
-    const st = document.createElement("td");
+    return cell;
+  }
+  function statusCell(c) {
+    const cell = document.createElement("td");
     const badge = document.createElement("span");
     badge.className = "badge";
     badge.textContent = c.status;
-    st.appendChild(badge);
-    tr.appendChild(st);
-    tbody.appendChild(tr);
+    cell.appendChild(badge);
+    return cell;
+  }
+  function haystack(c) {
+    const v = c.value || {};
+    const span = c.char_start == null ? "" : c.char_start + "–" + c.char_end;
+    return [c.entity, c.attribute, v.raw, v.normalized, v.unit, v.scale_source,
+            c.page, span, c.status, c.claim_kind, c.assertion_class,
+            ...(c.flags || [])].join(" ").toLowerCase();
+  }
 
-    // One haystack per row covering EVERY column (entity too), searched as one string.
-    tr.dataset.search = [c.entity, c.attribute, v.raw, v.normalized, v.unit,
-                         v.scale_source, c.page, span, c.status,
-                         c.claim_kind, c.assertion_class,
-                         ...(c.flags || [])].join(" ").toLowerCase();
-    rows.push(tr);
+  const figBody = $("figbody"), asrtBody = $("asrtbody");
+  const figRows = [], asrtRows = [];   // each: { tr, i } where i indexes R.claims
+  R.claims.forEach((c, i) => {
+    const v = c.value || {};
+    const span = c.char_start == null ? "" : c.char_start + "–" + c.char_end;
+    const tr = document.createElement("tr");
+    tr.className = c.status;
+    tr.dataset.search = haystack(c);
+
+    if (c.claim_kind === "qualitative") {
+      tr.classList.add("qual");
+      tr.appendChild(td(c.attribute));
+      const clsCell = document.createElement("td");
+      if (c.assertion_class) {
+        const tag = document.createElement("span");
+        tag.className = "qtag";
+        tag.textContent = c.assertion_class.replace(/_/g, " ");
+        clsCell.appendChild(tag);
+      }
+      tr.appendChild(clsCell);
+      const quoteCell = document.createElement("td");
+      quoteCell.className = "quote";
+      const box = document.createElement("div");
+      box.className = "quotebox";
+      box.textContent = v.raw == null ? "" : String(v.raw);
+      quoteCell.appendChild(box);
+      tr.appendChild(quoteCell);
+      tr.appendChild(pageCell(c, i));
+      tr.appendChild(td(span, "num"));
+      tr.appendChild(statusCell(c));
+      asrtBody.appendChild(tr);
+      asrtRows.push({ tr, i });
+    } else {
+      tr.appendChild(td(c.attribute));
+      tr.appendChild(td(v.raw));
+      tr.appendChild(td(typeof v.normalized === "number"
+        ? v.normalized.toLocaleString("en-US", { maximumFractionDigits: 4 })
+        : v.normalized, "num"));
+      tr.appendChild(td(v.unit || "—", v.unit ? "" : "mut"));
+      tr.appendChild(td(v.scale_source, "mut"));
+      tr.appendChild(pageCell(c, i));
+      tr.appendChild(td(span, "num"));
+      tr.appendChild(statusCell(c));
+      figBody.appendChild(tr);
+      figRows.push({ tr, i });
+    }
   });
-  $("tablewrap").hidden = false;
+  $("figsec").hidden = figRows.length === 0;
+  $("asrtsec").hidden = asrtRows.length === 0;
 
-  // ---------- search + status filter ----------
+  // ---------- search + status filter (both tables) ----------
+  const q = $("q");
+  const fmt = n => n.toLocaleString("en-US");
   const statuses = [...new Set(R.claims.map(c => c.status))];
   const pills = $("pills");
   let activeStatus = "all";
@@ -314,59 +375,48 @@
     b.textContent = s[0].toUpperCase() + s.slice(1);
     b.addEventListener("click", () => {
       activeStatus = s;
-      pageIdx = 0;
+      figPage = 0;
       pills.querySelectorAll(".pill").forEach(p => p.classList.toggle("on", p === b));
       applyFilter();
     });
     pills.appendChild(b);
   });
-  // A second, independent filter: figures (numeric) vs assertions (qualitative).
-  // Only shown when the run actually produced qualitative claims.
-  const kindpills = $("kindpills");
-  let activeKind = "all";
-  if (nQual) {
-    [["all", "All"], ["quantitative", "Figures"], ["qualitative", "Assertions"]]
-      .forEach(([val, label]) => {
-        const b = document.createElement("button");
-        b.className = "pill" + (val === "all" ? " on" : "");
-        b.textContent = label;
-        b.addEventListener("click", () => {
-          activeKind = val;
-          pageIdx = 0;
-          kindpills.querySelectorAll(".pill").forEach(p => p.classList.toggle("on", p === b));
-          applyFilter();
-        });
-        kindpills.appendChild(b);
-      });
-  }
-  const kindOf = c => c.claim_kind || "quantitative";
-  const q = $("q");
+
   const PAGE_SIZE = 50;
-  let pageIdx = 0;
-  const fmt = n => n.toLocaleString("en-US");
-  function applyFilter() {
+  let figPage = 0;
+  function matches(entry) {
+    const c = R.claims[entry.i];
     const needle = q.value.trim().toLowerCase();
-    const matched = rows.filter((tr, i) =>
-      (activeStatus === "all" || R.claims[i].status === activeStatus)
-      && (activeKind === "all" || kindOf(R.claims[i]) === activeKind)
-      && (!needle || tr.dataset.search.includes(needle)));
-    const nPages = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
-    pageIdx = Math.min(pageIdx, nPages - 1);
-    const from = pageIdx * PAGE_SIZE, to = from + PAGE_SIZE;
-    rows.forEach(tr => { tr.hidden = true; });
-    matched.slice(from, to).forEach(tr => { tr.hidden = false; });
-    $("showing").textContent = matched.length
-      ? "Showing " + fmt(from + 1) + "–" + fmt(Math.min(to, matched.length)) +
-        " of " + fmt(matched.length)
-      : "Showing 0 of " + fmt(rows.length);
-    $("pageinfo").textContent = "Page " + fmt(pageIdx + 1) + " of " + fmt(nPages);
-    $("prev").disabled = pageIdx === 0;
-    $("next").disabled = pageIdx >= nPages - 1;
-    $("pager").hidden = matched.length <= PAGE_SIZE;
+    return (activeStatus === "all" || c.status === activeStatus)
+      && (!needle || entry.tr.dataset.search.includes(needle));
   }
-  $("prev").addEventListener("click", () => { pageIdx--; applyFilter(); });
-  $("next").addEventListener("click", () => { pageIdx++; applyFilter(); });
-  q.addEventListener("input", () => { pageIdx = 0; applyFilter(); });
+  function applyFilter() {
+    // Assertions: few, so show every match -- scanning them is the point.
+    const aMatched = asrtRows.filter(matches);
+    asrtRows.forEach(e => { e.tr.hidden = true; });
+    aMatched.forEach(e => { e.tr.hidden = false; });
+    $("asrtcount").textContent = "· " + fmt(aMatched.length);
+
+    // Figures: paginated.
+    const fMatched = figRows.filter(matches);
+    const nPages = Math.max(1, Math.ceil(fMatched.length / PAGE_SIZE));
+    figPage = Math.min(figPage, nPages - 1);
+    const from = figPage * PAGE_SIZE, to = from + PAGE_SIZE;
+    figRows.forEach(e => { e.tr.hidden = true; });
+    fMatched.slice(from, to).forEach(e => { e.tr.hidden = false; });
+    $("figcount").textContent = "· " + fmt(fMatched.length);
+    $("figshowing").textContent = fMatched.length
+      ? "Showing " + fmt(from + 1) + "–" + fmt(Math.min(to, fMatched.length)) +
+        " of " + fmt(fMatched.length)
+      : "Showing 0 of " + fmt(figRows.length);
+    $("figpageinfo").textContent = "Page " + fmt(figPage + 1) + " of " + fmt(nPages);
+    $("figprev").disabled = figPage === 0;
+    $("fignext").disabled = figPage >= nPages - 1;
+    $("figpager").hidden = fMatched.length <= PAGE_SIZE;
+  }
+  $("figprev").addEventListener("click", () => { figPage--; applyFilter(); });
+  $("fignext").addEventListener("click", () => { figPage++; applyFilter(); });
+  q.addEventListener("input", () => { figPage = 0; applyFilter(); });
   applyFilter();
   $("controls").hidden = false;
 })();
