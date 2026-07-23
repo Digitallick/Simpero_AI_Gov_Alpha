@@ -1,13 +1,16 @@
 import json
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db
+from app.core.dependencies import get_claims, get_db
 from app.models.deal import Deal
 from app.repo.DealRepo import DealRepo
+from app.repo.HumanAuditRepo import HumanAuditRepo
 from app.repo.SessionRepo import SessionRepo
+from app.repo.UserRepo import UserRepo
 from app.schemas.deals import (
     AvgAiScoreStat,
     DashboardStatsResponse,
@@ -26,6 +29,13 @@ from app.services.memo_summary import derive_pipeline_metrics
 from app.services.pipeline_steps import no_job_steps
 
 router = APIRouter(prefix="/deals", tags=["deals"])
+
+
+async def _actor(db: AsyncSession, claims: dict[str, Any]) -> tuple[int, str, str | None]:
+    """(org_id, actor_id, actor_email) for the audit rows this router appends."""
+    user = await UserRepo(db).get_by_clerk_id(claims["user_id"])
+    assert user is not None  # get_db JIT-provisions this row before the handler runs
+    return user.org_id, claims["user_id"], user.email
 
 
 def _no_job_status() -> DealStatusResponse:
@@ -117,13 +127,26 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsR
 
 @router.get("/{deal_id}", response_model=DealWithLatestMemoResponse)
 async def get_deal(
-    deal_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    deal_id: uuid.UUID,
+    claims: dict[str, Any] = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
 ) -> DealWithLatestMemoResponse:
     """deals.get -> DealWithLatestMemo. 404 falls out of RLS returning no
     row — not a manual ownership check."""
     deal = await DealRepo(db).get_by_id(deal_id)
     if deal is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deal not found")
+
+    org_id, actor_id, actor_email = await _actor(db, claims)
+    await HumanAuditRepo(db).append(
+        {
+            "org_id": org_id,
+            "actor_id": actor_id,
+            "actor_email": actor_email,
+            "event_type": "document_access",
+            "deal_id": deal_id,
+        }
+    )
 
     latest_session = await SessionRepo(db).latest_for_deal(deal_id)
     latest_memo_session: LatestMemoSessionResponse | None = None

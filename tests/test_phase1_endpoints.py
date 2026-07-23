@@ -136,6 +136,38 @@ def test_get_deal_404_when_missing(client, seeded_org):
     assert resp.status_code == 404
 
 
+def test_get_deal_audits_document_access(client, owner_conn, seeded_org):
+    deal_id = _seed_deal(owner_conn, seeded_org["org_pk"])
+    _authed(seeded_org["clerk_org_id"], "user-1")
+
+    resp = client.get(f"/deals/{deal_id}")
+    assert resp.status_code == 200
+
+    with owner_conn.cursor() as cur:
+        cur.execute(
+            "SELECT actor_id, event_type FROM human_audit_log WHERE org_id = %s AND deal_id = %s",
+            (seeded_org["org_pk"], deal_id),
+        )
+        rows = cur.fetchall()
+        assert [(r[0], r[1]) for r in rows] == [("user-1", "document_access")]
+
+
+def test_get_deal_404_does_not_audit(client, owner_conn, seeded_org):
+    """A miss (RLS or genuinely absent) isn't an access — nothing was read,
+    so no document_access row should be written."""
+    _authed(seeded_org["clerk_org_id"], "user-1")
+    resp = client.get(f"/deals/{uuid.uuid4()}")
+    assert resp.status_code == 404
+
+    with owner_conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM human_audit_log "
+            "WHERE org_id = %s AND event_type = 'document_access'",
+            (seeded_org["org_pk"],),
+        )
+        assert cur.fetchone()[0] == 0
+
+
 def test_get_deal_status_no_job_shape(client, owner_conn, seeded_org):
     deal_id = _seed_deal(owner_conn, seeded_org["org_pk"])
     _authed(seeded_org["clerk_org_id"], "user-1")
@@ -299,6 +331,34 @@ def test_auth_flow_me_sync_profile_logout(client, owner_conn, seeded_org):
             (seeded_org["org_pk"],),
         )
         assert cur.fetchone()[0] == "jane@example.com"
+
+        # Two auth_login rows: one per /auth/me call above (before and after
+        # sync-profile) — logging on every call, not just first-ever login,
+        # since Clerk sign-in is client-side and /auth/me is the only
+        # server-side checkpoint that fires per session.
+        cur.execute(
+            "SELECT actor_id FROM human_audit_log WHERE event_type = 'auth_login' "
+            "AND org_id = %s ORDER BY created_at",
+            (seeded_org["org_pk"],),
+        )
+        assert [r[0] for r in cur.fetchall()] == [clerk_user_id, clerk_user_id]
+
+
+def test_auth_login_audit_records_actor_and_org(client, owner_conn, seeded_org):
+    clerk_user_id = f"test-user-{uuid.uuid4().hex[:8]}"
+    _authed(seeded_org["clerk_org_id"], clerk_user_id)
+
+    resp = client.get("/auth/me")
+    assert resp.status_code == 200
+
+    with owner_conn.cursor() as cur:
+        cur.execute(
+            "SELECT actor_id, actor_email, event_type FROM human_audit_log "
+            "WHERE org_id = %s AND event_type = 'auth_login'",
+            (seeded_org["org_pk"],),
+        )
+        rows = cur.fetchall()
+        assert [(r[0], r[1], r[2]) for r in rows] == [(clerk_user_id, None, "auth_login")]
 
 
 # --- logs ------------------------------------------------------------------
