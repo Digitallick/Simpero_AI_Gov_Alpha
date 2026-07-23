@@ -65,7 +65,14 @@ if [[ -n "$TIER_FLAG" && -z "${ANTHROPIC_API_KEY:-}" && -z "${ANTHROPIC_AUTH_TOK
   exit 1
 fi
 
-"${COMPOSE[@]}" ps --status running 2>/dev/null | grep -q postgres || { echo "error: the sandbox is not running -- run ./sandbox/up.sh first"; exit 1; }
+# `docker compose ps` occasionally returns empty when the daemon is briefly busy
+# (right after another compose call), so a single check is racy -- ask for the
+# postgres container by name and retry once before believing it is down.
+postgres_running() {
+  [[ -n "$("${COMPOSE[@]}" ps postgres --status running --format '{{.Name}}' 2>/dev/null)" ]]
+}
+postgres_running || { sleep 2; postgres_running; } \
+  || { echo "error: the sandbox is not running -- run ./sandbox/up.sh first"; exit 1; }
 
 printf '\033[1m========================================================================\n'
 printf '  Simpero local sandbox — running the pipeline\n'
@@ -86,8 +93,12 @@ CLAIMS_JSON="$SANDBOX_DIR/cim/claims.json"
 EMIT_LOG="$SANDBOX_DIR/cim/emit.log"
 
 step "1/4" "Copying the CIM into sandbox/cim/  (gitignored, never committed)"
-cp "$PDF" "$LOCAL_PDF"
-ok "$(basename "$PDF")"
+if [[ "$PDF" -ef "$LOCAL_PDF" ]]; then
+  ok "$(basename "$PDF") (already in sandbox/cim/)"
+else
+  cp "$PDF" "$LOCAL_PDF"
+  ok "$(basename "$PDF")"
+fi
 
 # Empty tier flag (tables only) must not become an empty argv entry, so the
 # flag is built as an array. The parser subprocess inherits this shell's
