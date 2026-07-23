@@ -1,12 +1,14 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_claims, get_db
 from app.models.organisation import Users
-from app.schemas.auth import ProfileSyncRequest, ProfileSyncResponse, UserResponse
+from app.repo.HumanAuditRepo import HumanAuditRepo
+from app.repo.UserRepo import UserRepo
+from app.schemas.auth import LogoutResponse, ProfileSyncRequest, ProfileSyncResponse, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -18,9 +20,9 @@ async def me(
 ) -> Users:
     """The caller's own user row. get_db JIT-provisions it on first login,
     so a valid token always finds exactly one row here."""
-    return (
-        await db.execute(select(Users).where(Users.clerk_user_id == claims["user_id"]))
-    ).scalar_one()
+    user = await UserRepo(db).get_by_clerk_id(claims["user_id"])
+    assert user is not None  # get_db JIT-provisions this row before the handler runs
+    return user
 
 
 @router.post("/sync-profile", response_model=ProfileSyncResponse)
@@ -42,3 +44,24 @@ async def sync_profile(
             update(Users).where(Users.clerk_user_id == claims["user_id"]).values(**fields)
         )
     return ProfileSyncResponse(success=True)
+
+
+@router.post("/logout", response_model=LogoutResponse)
+async def logout(
+    claims: dict[str, Any] = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+) -> LogoutResponse:
+    """Clerk's signOut() is entirely client-side (it just drops the session
+    token) — this endpoint's only job is the compliance trail: one
+    `auth_sign_out` row via HumanAuditRepo."""
+    user = await UserRepo(db).get_by_clerk_id(claims["user_id"])
+    assert user is not None  # get_db JIT-provisions this row before the handler runs
+    await HumanAuditRepo(db).append(
+        {
+            "org_id": user.org_id,
+            "actor_id": claims["user_id"],
+            "actor_email": user.email,
+            "event_type": "auth_sign_out",
+        }
+    )
+    return LogoutResponse(success=True)

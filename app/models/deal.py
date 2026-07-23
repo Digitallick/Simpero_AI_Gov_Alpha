@@ -1,0 +1,53 @@
+import uuid
+from datetime import datetime
+
+from sqlalchemy import BigInteger, ForeignKey, Integer, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import DateTime
+
+from app.core.database import Base
+from app.models.organisation import Funds, Organisation
+
+# Lifecycle states mirror the frontend's dealsLifecycle.STATE_ORDER
+# (src/shared/dealsLifecycle.ts in Simpero_AI_Gov_Web): sourcing -> draft ->
+# submitted -> (approved | declined). Kept as a plain string, not a DB enum,
+# so the two repos' lifecycle contracts don't require a migration to stay
+# in sync — the frontend module is the source of truth for the sequence.
+DEFAULT_DEAL_STATUS = "sourcing"
+
+
+class Deal(Base):
+    __tablename__ = "deals"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+
+    # Tenant. Integer FK because organisation.id is a serial Integer — RLS joins
+    # through to organisation.clerk_org_id, same idiom as funds/claims/human_audit_log.
+    org_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey(Organisation.id), nullable=False, index=True
+    )
+    # Nullable: the frontend's deals.create contract has no fund field yet.
+    fund_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey(Funds.id), nullable=True, index=True
+    )
+
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    gp_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Integer cents, per repo convention (no floats for money).
+    deal_size_min_usd: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    deal_size_max_usd: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    sector_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=DEFAULT_DEAL_STATUS)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

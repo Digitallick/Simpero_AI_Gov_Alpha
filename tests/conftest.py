@@ -1,5 +1,7 @@
-from collections.abc import AsyncGenerator
+import os
+from collections.abc import AsyncGenerator, Iterator
 
+import psycopg2
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,22 @@ TEST_org_id = "test-tenant-00000000"
 @pytest.fixture(scope="session")
 def test_org_id() -> str:
     return TEST_org_id
+
+
+@pytest.fixture
+def owner_conn() -> Iterator["psycopg2.extensions.connection"]:
+    """Direct doadmin (table-owner) connection for fixture setup/teardown that
+    must bypass RLS — e.g. seeding a second tenant's row that a dd_app session
+    (scoped to one org via SET LOCAL) could never create for another org.
+    Never used by app code, tests only.
+    """
+    dsn = os.environ["ALEMBIC_DATABASE_URL"].replace("+psycopg2", "").replace("+asyncpg", "")
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 @pytest.fixture
@@ -31,8 +49,12 @@ async def db_session(test_org_id: str) -> AsyncGenerator[AsyncSession, None]:
     to it for test runs. Consider pytest-docker or a dedicated test schema.
     """
     async with AsyncSessionLocal() as session, session.begin():
+        # set_config(..., true) IS "SET LOCAL" in function form — a bare
+        # `SET LOCAL x = :p` cannot bind parameters (Postgres's SET grammar
+        # doesn't accept them), which is exactly why app/core/dependencies.py's
+        # get_db uses this same form. Kept in sync with that dependency.
         await session.execute(
-            text("SET LOCAL app.org_id = :tid"),
+            text("SELECT set_config('app.org_id', :tid, true)"),
             {"tid": test_org_id},
         )
         yield session

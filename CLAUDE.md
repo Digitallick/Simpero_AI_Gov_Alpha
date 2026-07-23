@@ -51,9 +51,9 @@ SQLAlchemy uses `NullPool` (`app/database.py`) because PgBouncer is the connecti
 
 Do not open DB connections at application startup — that would hold a PgBouncer slot indefinitely.
 
-### Auth: Clerk JWT (stub — not yet implemented)
+### Auth: Clerk JWT
 
-`app/core/security.py::decode_clerk_jwt` is currently a `NotImplementedError` stub. The TODO block in that file describes the required implementation: fetch Clerk's JWKS, verify the JWT signature with `python-jose`, validate `exp`/`aud`/`CLERK_TENANT_ID_CLAIM`. The tenant claim key is `CLERK_TENANT_ID_CLAIM = "org_id"`.
+`app/core/security.py::decode_clerk_jwt` is fully implemented: it fetches Clerk's JWKS (cached, 1h TTL), verifies the JWT signature with `python-jose`, and extracts the tenant org id and role from either the v1 (`org_id`/`org_role`) or v2 (`o.id`/`o.rol`) claim shape via `_extract_org`. Audience is deliberately not validated — Clerk's default session tokens carry no `aud` claim.
 
 ### Audit log immutability
 

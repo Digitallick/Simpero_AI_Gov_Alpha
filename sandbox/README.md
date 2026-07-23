@@ -1,10 +1,10 @@
 # Local sandbox
 
-Run the whole pipeline on your own machine — a CIM goes in, cited claims land in a local Postgres — with **no cloud database**. No DigitalOcean cluster, no firewall rule.
+Run the whole pipeline on your own machine — a CIM goes in, cited claims land in a local Postgres, and an interactive HTML report opens in your browser — with **no cloud database**. No DigitalOcean cluster, no firewall rule.
 
 ```
 ./sandbox/up.sh                     # local Postgres + Valkey, roles, migrations
-./sandbox/run.sh path/to/cim.pdf    # parse → extract → emit → ingest
+./sandbox/run.sh path/to/cim.pdf    # parse → extract → emit → ingest → report
 ./sandbox/down.sh                   # stop  (--wipe also deletes the data)
 ```
 
@@ -118,36 +118,81 @@ The prose tiers call the Anthropic API and require **`ANTHROPIC_API_KEY`** (or `
 
 **Confidentiality:** the CIM you pass is copied into `sandbox/cim/`, which is **gitignored and never committed**. Real deal documents are confidential — don't commit them. The prose tiers additionally **send each prose page's text to the Anthropic API**, so a real deal document leaves your machine on those tiers; `--tables-only` makes no network call at all. No sample document ships in this repo; bring your own (any financial-statement PDF with a table under a scale header works well — income statements are ideal).
 
-`run.sh` narrates each step and, at the end, **prints the claims table it just wrote** so you can see exactly what landed:
+`run.sh` narrates the five steps demo-style — a live spinner with elapsed time during the parse (the slow step on long documents), then a summary of what landed instead of a raw table dump — and finishes by opening the HTML report in your browser:
 
 ```
-[1/4] Copying the CIM into sandbox/cim/  (gitignored, never committed)   ✓
-[2/4] Parse → extract → emit   (parse service; docling, no database)
-      ✓ emitted 24 claims (24 cited, 0 missing), 0 flags
-[3/4] Ingest into the local claims spine   (backend, as the dd_app app role)
-      24 claims validated against the contract.
-      dd_app, tenant 'sandbox_demo': sees 24 claims (inserted 24).
+[1/5] Copying the CIM into sandbox/cim/  (gitignored, never committed)   ✓
+[2/5] Parse → extract → emit   (docling layout analysis)
+      ⠹ analyzing the document… 23s          ← spinner, replaced on completion by:
+      ✓ emitted 576 claims (573 cited, 3 missing), 0 flags
+[3/5] Ingest into the local claims spine   (backend, as the dd_app app role)
+      576 claims validated against the contract.
+      dd_app, tenant 'sandbox_demo': sees 576 claims (inserted 576).
       dd_app, a DIFFERENT tenant: sees 0 claims (RLS isolation).
-[4/4] Reading back the claims table
-     entity     |      attribute      |   raw   | normalized | unit | page |  span   |  status
- ---------------+---------------------+---------+------------+------+------+---------+----------
-  Target Co     | Revenue | FY2023    | $19,850 | 19850000.0 | USD  |    1 | 209-216 | proposed
-  Target Co     | Gross Margin | FY23 | 9,150   | 9150000.0  | USD  |    1 | 295-300 | proposed
-  Target Co     | Gross Margin % | F.. | 46.1%   | 46.1       | %    |    1 | 335-340 | proposed
-      24 claims  |  proposed  |  scale from: explicit_in_value, page_header
+[4/5] Verifying what landed   (reading THIS run's claims back from Postgres)
+      Claims stored ............ 576
+      With exact citation ...... 573   (page + character span + word-level boxes)
+      Missing citation ......... 3     (nothing resolved — recorded honestly, no fabrication)
+      Distinct attributes ...... 533
+      Pages with claims ........ 37    (pages 5-49 of the document)
+[5/5] Building the interactive report   (rendered pages + click-through citations)
 ```
 
 Read it top to bottom:
 
-- The `dd_app sees 24 / a different tenant sees 0` pair is the **tenant isolation proof** — enforced by Postgres row-level security, exercised as the `dd_app` app role.
-- Every row carries the raw printed value, the scaled `normalized` number, an exact character `span`, and `status = proposed` (cited, pending verification). None is fabricated.
-- The scaling is visible: currency is scaled from the `(in Thousands)` header (`$19,850` → 19,850,000), a bare `9,150` is scaled the same way, and a percent is left alone (`46.1%` → 46.1). That last distinction is the point of the value-type gate.
+- The `dd_app sees 576 / a different tenant sees 0` pair is the **tenant isolation proof** — enforced by Postgres row-level security, exercised as the `dd_app` app role.
+- The step-4 summary is scoped to **this run's `session_id`** — earlier runs for the same tenant stay in the table but don't inflate the numbers. (The "tenant sees N" line in step 3 is the tenant's all-runs total; wipe first if you want it to match.)
+- Every claim carries the raw printed value, the scaled `normalized` number, an exact character span, and `status = proposed` (cited, pending verification). None is fabricated.
+
+For a pristine client demo where every count matches the run, start clean: `./sandbox/down.sh --wipe && ./sandbox/up.sh`.
 
 ---
 
-## 4. Query the claims yourself
+## 4. The HTML report
 
-`run.sh` already printed the table. To poke at it further:
+`run.sh` finishes by rebuilding `sandbox/report.html`'s data and opening it
+in your browser (re-open it any time — no server needed). It shows:
+
+- **Header + stat cards** — entity, source file, tenant, page range, and
+  counts for total claims, proposed, missing citation, distinct attributes.
+- **Search across every column** — attribute, raw, normalized, unit, scale
+  source, page, span, status, flags — combined with status filter pills
+  (All / Proposed / Missing / …, built from the statuses actually present)
+  and a live "Showing X of Y" count.
+- **A paginated table** — 50 rows per page with Prev/Next; the pager hides
+  itself when everything fits on one page. Long attribute names wrap so the
+  other columns stay visible.
+- **Click-through citations** — any cited row has a clickable page number:
+  a modal opens with the actual rendered PDF page, the clicked claim's
+  word-boxes highlighted in gold and every other cited claim on that page
+  outlined in teal (Esc / click outside / × closes). `missing` rows stay
+  plain text — they have no span/bbox to show.
+
+The report always reflects the **latest run** for the tenant (scoped by
+`session_id`), not the accumulation of every run before it.
+
+**Confidentiality by construction:** `report.html` is a data-free template,
+committed to git. Everything confidential — the claims and the page images,
+rendered at 144 DPI with pypdfium2 from the parser repo's venv — is written
+to `sandbox/cim/report_data.js`, which the template loads via a `<script>`
+tag (works from `file://`, no server needed). `cim/` is gitignored, so no
+CIM content can leak onto git. Only pages carrying at least one bbox-cited
+claim are rendered.
+
+The data file is a static snapshot — re-run `run.sh` to refresh it, or
+rebuild just the report without re-parsing (from this repo's root):
+
+```bash
+uv run --project ../Simpero_Gov_AI_Services python sandbox/export_report.py \
+  --pdf "sandbox/cim/your-cim.pdf"     # --pdf optional when cim/ holds exactly one PDF
+```
+
+---
+
+## 5. Query the claims yourself
+
+The report and step-4 summary cover the common questions; for anything else,
+go straight at the database:
 
 ```bash
 docker compose -f sandbox/docker-compose.yml exec postgres \
@@ -156,7 +201,7 @@ docker compose -f sandbox/docker-compose.yml exec postgres \
 
 ---
 
-## 5. Tear down
+## 6. Tear down
 
 ```bash
 ./sandbox/down.sh          # stop the containers, keep the data

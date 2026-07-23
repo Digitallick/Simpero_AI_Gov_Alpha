@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simpero sandbox — parsed claims</title>
+<!--
+  TEMPLATE ONLY — this file is committed and contains no deal data.
+  All confidential content (claims + rendered CIM pages) lives in
+  cim/report_data.js, written by export_report.py after each run.sh and
+  gitignored via the cim/ directory. A plain <script src> works from
+  file:// with no local server, which fetch() would not.
+-->
+<style>
+  :root { --gold: #d4a017; --teal: #0e7c7b; --ink: #1d1d1f; --mut: #6e6e73;
+          --line: #e2e0db; --card: #fff; --num: #8b6b2e; --red: #b3382c;
+          --serif: Georgia, "Times New Roman", serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.5rem 1.5rem; font: 15px/1.5 -apple-system, "Segoe UI", sans-serif;
+         background: #f6f5f2; color: var(--ink); }
+  .page { max-width: 1160px; margin: 0 auto; }
+  .eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .14em;
+             text-transform: uppercase; color: #6b6a58; }
+  h1 { font: 400 2.3rem/1.15 var(--serif); margin: .35rem 0 .6rem; }
+  .meta { display: flex; flex-wrap: wrap; gap: .35rem .5rem; align-items: center;
+          color: var(--mut); font-size: .85rem; margin-bottom: 1.6rem; }
+  .meta code { font: .8rem ui-monospace, Menlo, monospace; background: #edebe5;
+               border: 1px solid var(--line); border-radius: 5px; padding: .1rem .45rem;
+               color: #3d3c38; }
+  .meta .dot { color: #c9c6bd; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+           gap: 1rem; margin-bottom: 1.8rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 1.1rem 1.3rem; }
+  .card b { display: block; font: 400 2rem/1.1 var(--serif); color: var(--num);
+            font-variant-numeric: tabular-nums; }
+  .card.red b { color: var(--red); }
+  .card span { font-size: .7rem; font-weight: 600; letter-spacing: .09em;
+               text-transform: uppercase; color: var(--mut); }
+
+  #empty { display: none; background: var(--card); border: 1px solid var(--line);
+           border-radius: 10px; padding: 2rem; color: var(--mut); }
+  #empty code { background: #edebe5; padding: .1rem .4rem; border-radius: 4px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
+              margin-bottom: 1rem; }
+  .search { flex: 1 1 260px; position: relative; }
+  .search svg { position: absolute; left: .8rem; top: 50%; translate: 0 -50%;
+                width: 14px; height: 14px; stroke: var(--mut); fill: none;
+                stroke-width: 2; pointer-events: none; }
+  #q { width: 100%; padding: .55rem 1rem .55rem 2.3rem; font: inherit;
+       border: 1px solid var(--line); border-radius: 99px; background: var(--card);
+       color: var(--ink); outline: none; }
+  #q:focus { border-color: #b9b6ac; }
+  .pill { border: 1px solid var(--line); background: var(--card); color: var(--ink);
+          font: 600 .82rem/1 inherit; font-family: inherit; padding: .5rem .95rem;
+          border-radius: 99px; cursor: pointer; }
+  .pill.on { background: #2d2c28; border-color: #2d2c28; color: #fff; }
+  #showing { font-size: .82rem; color: var(--mut); white-space: nowrap; }
+
+  .tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line);
+               border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: .55rem .85rem; text-align: left; white-space: nowrap;
+           border-bottom: 1px solid #eeece7; }
+  /* Long attributes were forcing every other column off-screen: cap this
+     column and let it wrap instead. */
+  th:first-child { width: 30%; }
+  td:first-child { white-space: normal; overflow-wrap: anywhere; }
+  th { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+       color: var(--mut); background: #faf9f7; font-weight: 600; }
+  th.num, td.num { text-align: right; }
+  td.num { font-variant-numeric: tabular-nums; }
+  td.mut { color: var(--mut); }
+  tr:last-child td { border-bottom: none; }
+  .pager { display: flex; align-items: center; justify-content: flex-end; gap: .6rem;
+           margin-top: .8rem; font-size: .82rem; color: var(--mut); }
+  .pager button { border: 1px solid var(--line); background: var(--card); color: var(--ink);
+                  font: 600 .82rem/1 inherit; font-family: inherit; padding: .45rem .9rem;
+                  border-radius: 99px; cursor: pointer; }
+  .pager button:disabled { opacity: .4; cursor: default; }
+  a.pg { color: var(--teal); font-weight: 600; text-decoration: underline; cursor: pointer; }
+  .badge { font-size: .72rem; padding: .12rem .55rem; border-radius: 99px;
+           background: #eeece7; color: #504f4c; }
+  tr.missing td { color: #a5a29b; }
+  tr.missing .badge { background: #f3e9e9; color: #9b4d4d; }
+
+  #modal { position: fixed; inset: 0; display: none; z-index: 10; }
+  #modal.open { display: block; }
+  #backdrop { position: absolute; inset: 0; background: rgba(20,20,20,.65); }
+  #panel { position: relative; margin: 3vh auto; width: min(92vw, 900px);
+           max-height: 94vh; overflow-y: auto; background: #fff;
+           border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  #panelhead { position: sticky; top: 0; display: flex; align-items: center; gap: 1rem;
+               justify-content: space-between; padding: .6rem 1rem;
+               background: #fff; border-bottom: 1px solid #eeece7; }
+  #close { border: 0; background: none; font-size: 1.4rem; line-height: 1;
+           cursor: pointer; color: var(--mut); padding: .2rem .5rem; }
+  #pagewrap { position: relative; }
+  #pagewrap img { display: block; width: 100%; }
+  .box { position: absolute; pointer-events: none; }
+  .box.hit { background: rgba(212,160,23,.30); border: 2px solid var(--gold); }
+  .box.ctx { border: 2px solid var(--teal); opacity: .7; }
+  .legend { font-size: .78rem; color: var(--mut); display: flex; gap: 1rem; }
+  .legend i { display: inline-block; width: .8em; height: .8em; margin-right: .3em;
+              vertical-align: -.05em; }
+  .legend .g i { background: rgba(212,160,23,.30); border: 2px solid var(--gold); }
+  .legend .t i { border: 2px solid var(--teal); }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">Parsed claims · Local sandbox</div>
+  <h1 id="title">Claims report</h1>
+  <div class="meta" id="meta" hidden></div>
+
+  <div id="empty">
+    No report data found. Run the pipeline first —
+    <code>./sandbox/run.sh /path/to/cim.pdf</code> — which writes
+    <code>sandbox/cim/report_data.js</code>, then reload this page.
+  </div>
+
+  <div class="cards" id="cards" hidden></div>
+
+  <div class="controls" id="controls" hidden>
+    <div class="search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+      <input id="q" type="search" placeholder="Search any column — attribute, raw, page, status…">
+    </div>
+    <span id="pills"></span>
+    <span id="showing"></span>
+  </div>
+
+  <div class="tablewrap" id="tablewrap" hidden><table>
+  <thead><tr><th>attribute</th><th>raw</th><th class="num">normalized</th>
+  <th>unit</th><th>scale</th><th class="num">page&nbsp;↑</th><th class="num">span</th>
+  <th>status</th></tr></thead>
+  <tbody id="tbody"></tbody>
+  </table></div>
+
+  <div class="pager" id="pager" hidden>
+    <button id="prev">‹ Prev</button>
+    <span id="pageinfo"></span>
+    <button id="next">Next ›</button>
+  </div>
+</div>
+
+<div id="modal" role="dialog" aria-modal="true">
+  <div id="backdrop"></div>
+  <div id="panel">
+    <div id="panelhead">
+      <b id="paget"></b>
+      <span class="legend"><span class="g"><i></i>this claim</span>
+        <span class="t"><i></i>other cited claims on this page</span></span>
+      <button id="close" aria-label="close">×</button>
+    </div>
+    <div id="pagewrap"></div>
+  </div>
+</div>
+
+<script src="cim/report_data.js"></script>
+<script>
+(function () {
+  const R = window.REPORT;
+  if (!R) { document.getElementById("empty").style.display = "block"; return; }
+  const $ = id => document.getElementById(id);
+
+  // ---------- header ----------
+  const entity = R.claims[0] ? R.claims[0].entity : "";
+  const pageNos = R.claims.map(c => c.page).filter(p => p != null);
+  const pageRange = pageNos.length
+    ? Math.min(...pageNos) + "–" + Math.max(...pageNos) : "—";
+  document.title = entity + " — parsed claims";
+  $("title").textContent = entity;
+  const meta = $("meta");
+  [["Source", R.pdf], ["Entity", entity], ["Tenant", R.org], ["Pages", pageRange]]
+    .forEach(([label, val], i) => {
+      if (i) { const d = document.createElement("span"); d.className = "dot";
+               d.textContent = "·"; meta.appendChild(d); }
+      meta.append(label + " ");
+      const c = document.createElement("code");
+      c.textContent = val;
+      meta.appendChild(c);
+    });
+  meta.hidden = false;
+
+  // ---------- stat cards ----------
+  const nMissing = R.claims.filter(c => c.status === "missing").length;
+  const nProposed = R.claims.filter(c => c.status === "proposed").length;
+  const nAttrs = new Set(R.claims.map(c => c.attribute)).size;
+  const cards = $("cards");
+  [[R.claims.length, "Total claims", ""], [nProposed, "Proposed", ""],
+   [nMissing, "Missing citation", nMissing ? "red" : ""], [nAttrs, "Distinct attributes", ""]]
+    .forEach(([n, label, cls]) => {
+      const d = document.createElement("div");
+      d.className = "card " + cls;
+      const b = document.createElement("b");
+      b.textContent = n.toLocaleString("en-US");
+      const s = document.createElement("span");
+      s.textContent = label;
+      d.append(b, s);
+      cards.appendChild(d);
+    });
+  cards.hidden = false;
+
+  // ---------- modal ----------
+  const modal = $("modal"), wrap = $("pagewrap");
+  function boxDiv(b, cls, w, h) {
+    const d = document.createElement("div");
+    d.className = "box " + cls;
+    d.style.left   = (b[0] / w * 100) + "%";
+    d.style.top    = (b[1] / h * 100) + "%";
+    d.style.width  = ((b[2] - b[0]) / w * 100) + "%";
+    d.style.height = ((b[3] - b[1]) / h * 100) + "%";
+    return d;
+  }
+  function openModal(i) {
+    const c = R.claims[i], pg = R.pages[c.page];
+    $("paget").textContent = "Page " + c.page;
+    wrap.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = pg.uri;
+    wrap.appendChild(img);
+    R.claims.forEach((o, j) => {
+      if (j !== i && o.page === c.page && o.bbox)
+        o.bbox.forEach(b => wrap.appendChild(boxDiv(b, "ctx", pg.w_pt, pg.h_pt)));
+    });
+    c.bbox.forEach(b => wrap.appendChild(boxDiv(b, "hit", pg.w_pt, pg.h_pt)));
+    modal.classList.add("open");
+  }
+  const closeModal = () => modal.classList.remove("open");
+  $("close").addEventListener("click", closeModal);
+  $("backdrop").addEventListener("click", closeModal);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+  // ---------- table ----------
+  function td(text, cls) {
+    const el = document.createElement("td");
+    if (cls) el.className = cls;
+    el.textContent = text == null || text === "" ? "" : String(text);
+    return el;
+  }
+  const tbody = $("tbody"), rows = [];
+  R.claims.forEach((c, i) => {
+    const v = c.value || {};
+    const span = c.char_start == null ? "" : c.char_start + "–" + c.char_end;
+    const tr = document.createElement("tr");
+    tr.className = c.status;
+    tr.appendChild(td(c.attribute));
+    tr.appendChild(td(v.raw));
+    tr.appendChild(td(typeof v.normalized === "number"
+      ? v.normalized.toLocaleString("en-US", { maximumFractionDigits: 4 })
+      : v.normalized, "num"));
+    tr.appendChild(td(v.unit || "—", v.unit ? "" : "mut"));
+    tr.appendChild(td(v.scale_source, "mut"));
+
+    const pageCell = document.createElement("td");
+    pageCell.className = "num";
+    if (c.bbox && R.pages[c.page]) {
+      const a = document.createElement("a");
+      a.className = "pg";
+      a.textContent = c.page;
+      a.addEventListener("click", e => { e.preventDefault(); openModal(i); });
+      pageCell.appendChild(a);
+    } else {
+      pageCell.textContent = c.page == null ? "" : c.page;
+    }
+    tr.appendChild(pageCell);
+
+    tr.appendChild(td(span, "num"));
+    const st = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = c.status;
+    st.appendChild(badge);
+    tr.appendChild(st);
+    tbody.appendChild(tr);
+
+    // One haystack per row covering EVERY column (entity too), searched as one string.
+    tr.dataset.search = [c.entity, c.attribute, v.raw, v.normalized, v.unit,
+                         v.scale_source, c.page, span, c.status,
+                         ...(c.flags || [])].join(" ").toLowerCase();
+    rows.push(tr);
+  });
+  $("tablewrap").hidden = false;
+
+  // ---------- search + status filter ----------
+  const statuses = [...new Set(R.claims.map(c => c.status))];
+  const pills = $("pills");
+  let activeStatus = "all";
+  ["all", ...statuses].forEach(s => {
+    const b = document.createElement("button");
+    b.className = "pill" + (s === "all" ? " on" : "");
+    b.textContent = s[0].toUpperCase() + s.slice(1);
+    b.addEventListener("click", () => {
+      activeStatus = s;
+      pageIdx = 0;
+      pills.querySelectorAll(".pill").forEach(p => p.classList.toggle("on", p === b));
+      applyFilter();
+    });
+    pills.appendChild(b);
+  });
+  const q = $("q");
+  const PAGE_SIZE = 50;
+  let pageIdx = 0;
+  const fmt = n => n.toLocaleString("en-US");
+  function applyFilter() {
+    const needle = q.value.trim().toLowerCase();
+    const matched = rows.filter((tr, i) =>
+      (activeStatus === "all" || R.claims[i].status === activeStatus)
+      && (!needle || tr.dataset.search.includes(needle)));
+    const nPages = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
+    pageIdx = Math.min(pageIdx, nPages - 1);
+    const from = pageIdx * PAGE_SIZE, to = from + PAGE_SIZE;
+    rows.forEach(tr => { tr.hidden = true; });
+    matched.slice(from, to).forEach(tr => { tr.hidden = false; });
+    $("showing").textContent = matched.length
+      ? "Showing " + fmt(from + 1) + "–" + fmt(Math.min(to, matched.length)) +
+        " of " + fmt(matched.length)
+      : "Showing 0 of " + fmt(rows.length);
+    $("pageinfo").textContent = "Page " + fmt(pageIdx + 1) + " of " + fmt(nPages);
+    $("prev").disabled = pageIdx === 0;
+    $("next").disabled = pageIdx >= nPages - 1;
+    $("pager").hidden = matched.length <= PAGE_SIZE;
+  }
+  $("prev").addEventListener("click", () => { pageIdx--; applyFilter(); });
+  $("next").addEventListener("click", () => { pageIdx++; applyFilter(); });
+  q.addEventListener("input", () => { pageIdx = 0; applyFilter(); });
+  applyFilter();
+  $("controls").hidden = false;
+})();
+</script>
+</body>
+</html>

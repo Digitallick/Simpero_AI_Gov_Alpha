@@ -11,6 +11,7 @@ from app.core.database import AsyncSessionLocal
 from app.core.exceptions import AuthenticationError
 from app.core.security import decode_clerk_jwt, fetch_clerk_organization
 from app.models.organisation import Organisation, OrgType, Users
+from app.repo.UserRepo import UserRepo
 
 
 async def get_claims(authorization: str = Header(...)) -> dict[str, Any]:
@@ -76,17 +77,15 @@ async def _ensure_user_provisioned(session: AsyncSession, claims: dict[str, Any]
         )
         if org_pk is None:  # pragma: no cover — RLS misconfig would surface here
             raise RuntimeError("Organisation row not visible after provisioning")
-
-    await session.execute(
-        pg_insert(Users)
-        .values(
-            org_id=org_pk,
-            clerk_user_id=claims["user_id"],
-            clerk_org_id=claims["tenant_id"],
-            role=claims.get("org_role") or "member",
-            login_method="clerk",
-        )
-        .on_conflict_do_nothing(index_elements=["clerk_user_id"])
+    user_repo = UserRepo(session)
+    await user_repo.upsert(
+        {
+            "org_id": org_pk,
+            "clerk_user_id": claims["user_id"],
+            "clerk_org_id": claims["tenant_id"],
+            "role": claims.get("org_role") or "member",
+            "login_method": "clerk",
+        }
     )
 
 
