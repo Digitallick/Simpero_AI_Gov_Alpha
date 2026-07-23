@@ -65,6 +65,12 @@ def _row_from_claim(claim: dict, org_id: int, session_id: uuid.UUID) -> Claim:
         verification_method=claim.get("verification_method"),
         section=claim.get("section"),
         flags=claim.get("flags") or None,
+        # Absent means quantitative; a qualitative claim carries both. Dropping
+        # these would make a qualitative claim indistinguishable in the store
+        # from a numeric one downgraded to text -- the exact split claim_kind
+        # exists to preserve.
+        claim_kind=claim.get("claim_kind"),
+        assertion_class=claim.get("assertion_class"),
         kind=location["kind"],
     )
     for key in _LOCATION_COLUMNS:
