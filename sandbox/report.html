@@ -57,6 +57,13 @@
           font: 600 .82rem/1 inherit; font-family: inherit; padding: .5rem .95rem;
           border-radius: 99px; cursor: pointer; }
   .pill.on { background: #2d2c28; border-color: #2d2c28; color: #fff; }
+  /* Qualitative claims: an assertion, not a figure. Tagged, not squeezed into
+     the numeric columns that are meaningless for them. */
+  .qtag { display: inline-block; margin-left: .5rem; font-size: .62rem; font-weight: 700;
+          letter-spacing: .06em; text-transform: uppercase; color: var(--teal);
+          border: 1px solid var(--teal); border-radius: 99px; padding: .05rem .4rem;
+          vertical-align: middle; white-space: nowrap; }
+  tr.qual td:first-child { border-left: 3px solid var(--teal); }
   #showing { font-size: .82rem; color: var(--mut); white-space: nowrap; }
 
   .tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line);
@@ -129,6 +136,7 @@
       <input id="q" type="search" placeholder="Search any column — attribute, raw, page, status…">
     </div>
     <span id="pills"></span>
+    <span id="kindpills"></span>
     <span id="showing"></span>
   </div>
 
@@ -189,9 +197,11 @@
   const nMissing = R.claims.filter(c => c.status === "missing").length;
   const nProposed = R.claims.filter(c => c.status === "proposed").length;
   const nAttrs = new Set(R.claims.map(c => c.attribute)).size;
+  const nQual = R.claims.filter(c => c.claim_kind === "qualitative").length;
   const cards = $("cards");
-  [[R.claims.length, "Total claims", ""], [nProposed, "Proposed", ""],
-   [nMissing, "Missing citation", nMissing ? "red" : ""], [nAttrs, "Distinct attributes", ""]]
+  [[R.claims.length, "Total claims", ""], [R.claims.length - nQual, "Figures", ""],
+   [nQual, "Assertions", ""], [nMissing, "Missing citation", nMissing ? "red" : ""],
+   [nAttrs, "Distinct attributes", ""]]
     .forEach(([n, label, cls]) => {
       const d = document.createElement("div");
       d.className = "card " + cls;
@@ -245,9 +255,17 @@
   R.claims.forEach((c, i) => {
     const v = c.value || {};
     const span = c.char_start == null ? "" : c.char_start + "–" + c.char_end;
+    const isQual = c.claim_kind === "qualitative";
     const tr = document.createElement("tr");
-    tr.className = c.status;
-    tr.appendChild(td(c.attribute));
+    tr.className = c.status + (isQual ? " qual" : "");
+    const attrCell = td(c.attribute);
+    if (isQual && c.assertion_class) {
+      const tag = document.createElement("span");
+      tag.className = "qtag";
+      tag.textContent = c.assertion_class.replace(/_/g, " ");
+      attrCell.appendChild(tag);
+    }
+    tr.appendChild(attrCell);
     tr.appendChild(td(v.raw));
     tr.appendChild(td(typeof v.normalized === "number"
       ? v.normalized.toLocaleString("en-US", { maximumFractionDigits: 4 })
@@ -280,6 +298,7 @@
     // One haystack per row covering EVERY column (entity too), searched as one string.
     tr.dataset.search = [c.entity, c.attribute, v.raw, v.normalized, v.unit,
                          v.scale_source, c.page, span, c.status,
+                         c.claim_kind, c.assertion_class,
                          ...(c.flags || [])].join(" ").toLowerCase();
     rows.push(tr);
   });
@@ -301,6 +320,26 @@
     });
     pills.appendChild(b);
   });
+  // A second, independent filter: figures (numeric) vs assertions (qualitative).
+  // Only shown when the run actually produced qualitative claims.
+  const kindpills = $("kindpills");
+  let activeKind = "all";
+  if (nQual) {
+    [["all", "All"], ["quantitative", "Figures"], ["qualitative", "Assertions"]]
+      .forEach(([val, label]) => {
+        const b = document.createElement("button");
+        b.className = "pill" + (val === "all" ? " on" : "");
+        b.textContent = label;
+        b.addEventListener("click", () => {
+          activeKind = val;
+          pageIdx = 0;
+          kindpills.querySelectorAll(".pill").forEach(p => p.classList.toggle("on", p === b));
+          applyFilter();
+        });
+        kindpills.appendChild(b);
+      });
+  }
+  const kindOf = c => c.claim_kind || "quantitative";
   const q = $("q");
   const PAGE_SIZE = 50;
   let pageIdx = 0;
@@ -309,6 +348,7 @@
     const needle = q.value.trim().toLowerCase();
     const matched = rows.filter((tr, i) =>
       (activeStatus === "all" || R.claims[i].status === activeStatus)
+      && (activeKind === "all" || kindOf(R.claims[i]) === activeKind)
       && (!needle || tr.dataset.search.includes(needle)));
     const nPages = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
     pageIdx = Math.min(pageIdx, nPages - 1);

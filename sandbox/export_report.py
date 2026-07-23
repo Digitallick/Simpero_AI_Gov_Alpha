@@ -47,7 +47,8 @@ def fetch_claims(org_key: str) -> list[dict]:
     sql = f"""
       SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) FROM (
         SELECT c.entity, c.attribute, c.value, c.kind, c.page,
-               c.char_start, c.char_end, c.bbox, c.status, c.flags
+               c.char_start, c.char_end, c.bbox, c.status, c.flags,
+               c.claim_kind, c.assertion_class
         FROM claims c JOIN organisation o ON o.id = c.org_id
         WHERE o.clerk_org_id = '{org_sql}'
           -- every run.sh ingest appends under a fresh session_id; the report
