@@ -61,10 +61,25 @@ def fetch_claims(org_key: str) -> list[dict]:
         ORDER BY c.page, c.char_start NULLS LAST) t;
     """
     proc = subprocess.run(
-        ["docker", "compose", "-f", str(SANDBOX_DIR / "docker-compose.yml"),
-         "exec", "-T", "postgres",
-         "psql", "-U", "doadmin", "-d", "simpero", "-tA", "-c", sql],
-        capture_output=True, text=True,
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(SANDBOX_DIR / "docker-compose.yml"),
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            "doadmin",
+            "-d",
+            "simpero",
+            "-tA",
+            "-c",
+            sql,
+        ],
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         sys.exit(f"error: psql failed:\n{proc.stderr}")
@@ -77,8 +92,10 @@ def render_pages(pdf_path: Path, pages: list[int]) -> dict[int, dict]:
     out: dict[int, dict] = {}
     for page_no in pages:
         if not 1 <= page_no <= len(doc):
-            sys.exit(f"error: claim cites page {page_no}, but the PDF has {len(doc)} pages "
-                     f"-- wrong --pdf for this dataset?")
+            sys.exit(
+                f"error: claim cites page {page_no}, but the PDF has {len(doc)} pages "
+                f"-- wrong --pdf for this dataset?"
+            )
         page = doc[page_no - 1]
         image = page.render(scale=SCALE).to_pil().convert("RGB")
         buf = io.BytesIO()
@@ -95,8 +112,12 @@ def render_pages(pdf_path: Path, pages: list[int]) -> dict[int, dict]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--org", default="sandbox_demo", help="tenant key (default: sandbox_demo)")
-    ap.add_argument("--pdf", type=Path, default=None,
-                    help="source PDF; defaults to the single PDF in sandbox/cim/")
+    ap.add_argument(
+        "--pdf",
+        type=Path,
+        default=None,
+        help="source PDF; defaults to the single PDF in sandbox/cim/",
+    )
     args = ap.parse_args()
 
     pdf_path = args.pdf
