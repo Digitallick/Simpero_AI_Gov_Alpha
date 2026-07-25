@@ -317,9 +317,7 @@ def test_r6_active_row_stays_active_with_admin_token(client, owner_conn, seeded_
     assert _admin_status(owner_conn, user_id) == "active"
 
 
-def test_admin_provisioned_reactivates_inactive_row_on_readmit_jwt(
-    client, owner_conn, seeded_org
-):
+def test_admin_provisioned_reactivates_inactive_row_on_readmit_jwt(client, owner_conn, seeded_org):
     # Was test_r6_inactive_row_never_reactivated: that name asserted the OLD
     # invariant ("D3 is revoke-only, an inactive row is never re-activated by
     # the passive JIT sync"). _ensure_admin_provisioned now DOES reactivate
@@ -330,9 +328,7 @@ def test_admin_provisioned_reactivates_inactive_row_on_readmit_jwt(
     user_id = f"user-{uuid.uuid4().hex[:8]}"
     _seed_admin(owner_conn, seeded_org, user_id, status="inactive")
     with owner_conn.cursor() as cur:
-        cur.execute(
-            "SELECT updated_at FROM clerk_admin_users WHERE clerk_user_id = %s", (user_id,)
-        )
+        cur.execute("SELECT updated_at FROM clerk_admin_users WHERE clerk_user_id = %s", (user_id,))
         old_updated_at = cur.fetchone()[0]
 
     _authed(seeded_org["clerk_org_id"], user_id, "admin")  # re-invited per Clerk
@@ -340,8 +336,7 @@ def test_admin_provisioned_reactivates_inactive_row_on_readmit_jwt(
     assert resp.status_code == 200  # reactivated same-request, guard passes
     with owner_conn.cursor() as cur:
         cur.execute(
-            "SELECT status, admin_type, updated_at FROM clerk_admin_users "
-            "WHERE clerk_user_id = %s",
+            "SELECT status, admin_type, updated_at FROM clerk_admin_users WHERE clerk_user_id = %s",
             (user_id,),
         )
         status, admin_type, updated_at = cur.fetchone()
@@ -587,8 +582,7 @@ def test_remove_member_deactivates_active_admin_row(client, monkeypatch, owner_c
         assert row[0] == "inactive"
         assert row[1] is not None
         cur.execute(
-            "SELECT status, updated_at, created_at FROM clerk_admin_users "
-            "WHERE clerk_user_id = %s",
+            "SELECT status, updated_at, created_at FROM clerk_admin_users WHERE clerk_user_id = %s",
             (target_clerk_id,),
         )
         status, updated_at, created_at = cur.fetchone()
@@ -627,8 +621,7 @@ async def test_admin_user_repo_deactivate_sets_updated_at(owner_conn, seeded_org
 
     with owner_conn.cursor() as cur:
         cur.execute(
-            "SELECT status, updated_at, created_at FROM clerk_admin_users "
-            "WHERE clerk_user_id = %s",
+            "SELECT status, updated_at, created_at FROM clerk_admin_users WHERE clerk_user_id = %s",
             (admin_user_id,),
         )
         status, updated_at, created_at = cur.fetchone()
@@ -816,7 +809,9 @@ def test_update_member_role_promote_reactivates_inactive_row(
 
     monkeypatch.setattr(members_mod, "update_organization_membership", _fake_update)
 
-    member_pk, member_clerk_id = _seed_member(owner_conn, seeded_org, email="reactivate@example.com")
+    member_pk, member_clerk_id = _seed_member(
+        owner_conn, seeded_org, email="reactivate@example.com"
+    )
     _seed_admin(owner_conn, seeded_org, member_clerk_id, status="inactive")
     admin_user_id = f"user-{uuid.uuid4().hex[:8]}"
     _seed_admin(owner_conn, seeded_org, admin_user_id)
@@ -1302,7 +1297,13 @@ def test_platform_members_list_merges_locally_inactive_row(
             "INSERT INTO users (org_id, clerk_user_id, clerk_org_id, role, login_method, "
             "name, email, status, deactivated_at) VALUES (%s, %s, %s, 'member', 'clerk', "
             "%s, %s, 'inactive', now())",
-            (target_org_pk, removed_clerk_user_id, target_org_clerk_id, "Removed Bob", "bob@client.co"),
+            (
+                target_org_pk,
+                removed_clerk_user_id,
+                target_org_clerk_id,
+                "Removed Bob",
+                "bob@client.co",
+            ),
         )
 
     try:
@@ -1432,7 +1433,9 @@ def test_update_org_member_role_cross_org_self_change_denied(
     assert calls == []
 
 
-def test_update_org_member_role_promote_no_local_user_row(client, monkeypatch, owner_conn, platform_org):
+def test_update_org_member_role_promote_no_local_user_row(
+    client, monkeypatch, owner_conn, platform_org
+):
     target_org_id = f"test-client-org-{uuid.uuid4().hex[:8]}"
     target_user_id = f"member-{uuid.uuid4().hex[:8]}"
 
@@ -1504,6 +1507,7 @@ def test_update_org_member_role_promote_reactivates_inactive_row_cross_org(
         )
 
     try:
+
         async def _fake_list(org_id: str, **kwargs: Any) -> list[dict[str, Any]]:
             return [_fake_membership(target_user_id, "target@example.com", role="org:member")]
 
@@ -1513,7 +1517,9 @@ def test_update_org_member_role_promote_reactivates_inactive_row_cross_org(
         monkeypatch.setattr(platform_members_mod, "list_organization_memberships", _fake_list)
         monkeypatch.setattr(platform_members_mod, "update_organization_membership", _fake_update)
         monkeypatch.setattr(
-            platform_members_mod, "fetch_clerk_user_primary_email", _async_return("target@example.com")
+            platform_members_mod,
+            "fetch_clerk_user_primary_email",
+            _async_return("target@example.com"),
         )
         admin_user_id = f"user-{uuid.uuid4().hex[:8]}"
         _seed_admin(owner_conn, platform_org, admin_user_id, admin_type="platform")
@@ -1573,6 +1579,7 @@ def test_update_org_member_role_demote_success_with_local_user_row(
         )
 
     try:
+
         async def _fake_list(org_id: str, **kwargs: Any) -> list[dict[str, Any]]:
             return [_fake_membership(target_user_id, "target@example.com", role="org:admin")]
 
@@ -1650,6 +1657,7 @@ def test_update_org_member_role_last_admin_demote_denied_scoped_to_target_org(
         )
 
     try:
+
         async def _fake_list(org_id: str, **kwargs: Any) -> list[dict[str, Any]]:
             return [_fake_membership(target_user_id, "target@example.com", role="org:admin")]
 
@@ -1715,6 +1723,7 @@ def test_remove_org_member_admin_with_no_local_user_row(
         )
 
     try:
+
         async def _fake_list(org_id: str, **kwargs: Any) -> list[dict[str, Any]]:
             return [_fake_membership(target_user_id, "target@example.com", role="org:admin")]
 
@@ -1726,7 +1735,9 @@ def test_remove_org_member_admin_with_no_local_user_row(
         monkeypatch.setattr(platform_members_mod, "list_organization_memberships", _fake_list)
         monkeypatch.setattr(platform_members_mod, "remove_organization_membership", _fake_remove)
         monkeypatch.setattr(
-            platform_members_mod, "fetch_clerk_user_primary_email", _async_return("target@example.com")
+            platform_members_mod,
+            "fetch_clerk_user_primary_email",
+            _async_return("target@example.com"),
         )
         admin_user_id = f"user-{uuid.uuid4().hex[:8]}"
         _seed_admin(owner_conn, platform_org, admin_user_id, admin_type="platform")
@@ -1782,6 +1793,7 @@ def test_remove_org_member_plain_member_with_local_user_row(
         )
 
     try:
+
         async def _fake_list(org_id: str, **kwargs: Any) -> list[dict[str, Any]]:
             return [_fake_membership(target_user_id, "target@example.com", role="org:member")]
 
@@ -1793,7 +1805,9 @@ def test_remove_org_member_plain_member_with_local_user_row(
         monkeypatch.setattr(platform_members_mod, "list_organization_memberships", _fake_list)
         monkeypatch.setattr(platform_members_mod, "remove_organization_membership", _fake_remove)
         monkeypatch.setattr(
-            platform_members_mod, "fetch_clerk_user_primary_email", _async_return("target@example.com")
+            platform_members_mod,
+            "fetch_clerk_user_primary_email",
+            _async_return("target@example.com"),
         )
         admin_user_id = f"user-{uuid.uuid4().hex[:8]}"
         _seed_admin(owner_conn, platform_org, admin_user_id, admin_type="platform")
@@ -1848,9 +1862,7 @@ def test_remove_org_member_platform_org_denied(client, monkeypatch, owner_conn, 
     _seed_admin(owner_conn, platform_org, admin_user_id, admin_type="platform")
     _authed(platform_org["clerk_org_id"], admin_user_id, "admin")
 
-    resp = client.delete(
-        f"/admin/organizations/{platform_org['clerk_org_id']}/members/some-user"
-    )
+    resp = client.delete(f"/admin/organizations/{platform_org['clerk_org_id']}/members/some-user")
     assert resp.status_code == 403
     assert calls == []
 
@@ -1879,6 +1891,7 @@ def test_remove_org_member_last_admin_denied_scoped_to_target_org(
         )
 
     try:
+
         async def _fake_list(org_id: str, **kwargs: Any) -> list[dict[str, Any]]:
             return [_fake_membership(target_user_id, "target@example.com", role="org:admin")]
 
@@ -1899,9 +1912,7 @@ def test_remove_org_member_last_admin_denied_scoped_to_target_org(
         )
         _authed(platform_org["clerk_org_id"], admin_user_id, "admin")
 
-        resp = client.delete(
-            f"/admin/organizations/{target_org_clerk_id}/members/{target_user_id}"
-        )
+        resp = client.delete(f"/admin/organizations/{target_org_clerk_id}/members/{target_user_id}")
         assert resp.status_code == 403
         assert calls == []
         with owner_conn.cursor() as cur:
@@ -2062,9 +2073,13 @@ def test_delete_org_success_audits_and_calls_clerk(client, monkeypatch, owner_co
         assert payload["name"] == "Client Co"
 
 
-def test_delete_org_platform_org_denied_no_clerk_call(client, monkeypatch, owner_conn, platform_org):
+def test_delete_org_platform_org_denied_no_clerk_call(
+    client, monkeypatch, owner_conn, platform_org
+):
     calls: list[Any] = []
-    monkeypatch.setattr(platform_org_delete_mod, "fetch_clerk_organization", _record_and_fail(calls))
+    monkeypatch.setattr(
+        platform_org_delete_mod, "fetch_clerk_organization", _record_and_fail(calls)
+    )
     monkeypatch.setattr(platform_org_delete_mod, "delete_organization", _record_and_fail(calls))
     admin_user_id = f"user-{uuid.uuid4().hex[:8]}"
     _seed_admin(owner_conn, platform_org, admin_user_id, admin_type="platform")
