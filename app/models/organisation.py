@@ -58,3 +58,5 @@ class Users(Base):
     login_method: Mapped[str] = mapped_column(String(50), nullable=False)
     clerk_user_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     clerk_org_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
