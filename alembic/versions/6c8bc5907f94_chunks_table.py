@@ -19,7 +19,7 @@ the RLS/org_isolation pattern established by claims (60a151dd80b0) and
 human_audit_log (7175bc85ffb0).
 
 Revision ID: 6c8bc5907f94
-Revises: 7b4b05b6d9c8
+Revises: 920070316626
 Create Date: 2026-07-24 09:52:32.578848
 
 """
@@ -34,7 +34,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from alembic import op
 
 revision: str = "6c8bc5907f94"
-down_revision: str | None = "7b4b05b6d9c8"
+down_revision: str | None = "920070316626"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
