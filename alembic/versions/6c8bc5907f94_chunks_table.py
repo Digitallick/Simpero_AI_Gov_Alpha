@@ -2,10 +2,10 @@
 
 Retrieval's search target (Epic 8): every piece of text/table cut out of an
 uploaded document, so search can find it later. Dense (embedding, HNSW) and
-sparse (sparse_search, GIN) indexes both live on this one table — a chunk is
+sparse (content_tsv, GIN) indexes both live on this one table — a chunk is
 retrievable by either path.
 
-sparse_search is a generated column (STORED), kept in sync with `content` by
+content_tsv is a generated column (STORED), kept in sync with `content` by
 Postgres itself rather than application code, so it can never drift out of
 sync with the text it indexes.
 
@@ -51,7 +51,7 @@ def upgrade() -> None:
         sa.Column("embedding", Vector(EMBEDDING_DIM), nullable=True),
         sa.Column("embedding_version", sa.Text(), nullable=True),
         sa.Column(
-            "sparse_search",
+            "content_tsv",
             TSVECTOR(),
             sa.Computed("to_tsvector('english', content)", persisted=True),
             nullable=True,
@@ -83,9 +83,9 @@ def upgrade() -> None:
     )
     # Sparse search: GIN over the generated tsvector column.
     op.create_index(
-        "ix_chunks_sparse_search_gin",
+        "ix_chunks_content_tsv_gin",
         "chunks",
-        ["sparse_search"],
+        ["content_tsv"],
         unique=False,
         postgresql_using="gin",
     )
@@ -109,7 +109,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DROP POLICY IF EXISTS org_isolation ON chunks")
-    op.drop_index("ix_chunks_sparse_search_gin", table_name="chunks")
+    op.drop_index("ix_chunks_content_tsv_gin", table_name="chunks")
     op.drop_index("ix_chunks_embedding_hnsw", table_name="chunks")
     op.drop_index(op.f("ix_chunks_document_id"), table_name="chunks")
     op.drop_index(op.f("ix_chunks_org_id"), table_name="chunks")

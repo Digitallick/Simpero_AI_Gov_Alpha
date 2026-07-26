@@ -77,19 +77,19 @@ async def test_org_isolation_still_shows_own_org_chunk(db_session, org_a_id, org
     assert org_b_chunk_id not in ids
 
 
-async def test_sparse_search_generated_from_content(db_session, org_a_id):
-    """sparse_search is a Postgres-generated column — this asserts Postgres
+async def test_content_tsv_generated_from_content(db_session, org_a_id):
+    """content_tsv is a Postgres-generated column — this asserts Postgres
     actually populates it from `content`, not that application code does."""
     result = await db_session.execute(
         text(
             "INSERT INTO chunks (org_id, content) VALUES (:org_id, :content) "
-            "RETURNING sparse_search::text"
+            "RETURNING content_tsv::text"
         ),
         {"org_id": org_a_id, "content": "revenue grew significantly"},
     )
-    sparse_search = result.scalar()
-    assert sparse_search is not None
-    assert "revenu" in sparse_search  # tsvector stems to the lexeme
+    content_tsv = result.scalar()
+    assert content_tsv is not None
+    assert "revenu" in content_tsv  # tsvector stems to the lexeme
 
 
 async def test_embedding_rejects_wrong_dimension(db_session, org_a_id):
