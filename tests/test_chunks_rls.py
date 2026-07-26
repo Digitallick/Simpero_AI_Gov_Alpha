@@ -5,6 +5,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from app.models.chunk import Chunk
+
 
 @pytest.fixture
 def org_a_id(owner_conn, test_org_id) -> int:
@@ -127,3 +129,27 @@ async def test_embedding_rejects_wrong_dimension(db_session, org_a_id):
             ),
             {"org_id": org_a_id, "content": "x", "embedding": wrong_dim_literal},
         )
+
+
+async def test_orm_insert_of_a_chunk_generates_content_tsv(db_session, org_a_id) -> None:
+    """A chunk written through the ORM (not raw SQL) must INSERT cleanly. content_tsv
+    is a GENERATED column, so the model has to mark it Computed/read-only -- otherwise
+    SQLAlchemy emits it in the INSERT and Postgres raises GeneratedAlwaysError. This
+    guards the ORM ingest path (scripts/ingest_chunks.py); the raw-SQL tests above
+    never exercised it."""
+    chunk = Chunk(
+        org_id=org_a_id,
+        document_id=uuid.uuid4(),
+        content="Total gaming revenue grew strongly",
+        element_type="prose",
+        page=1,
+    )
+    db_session.add(chunk)
+    await db_session.flush()  # would raise GeneratedAlwaysError before the fix
+    assert chunk.id is not None
+
+    fetched = await db_session.execute(
+        text("SELECT content_tsv::text FROM chunks WHERE id = :id"), {"id": chunk.id}
+    )
+    tsv = fetched.scalar()
+    assert tsv is not None and "revenu" in tsv  # Postgres populated it from content

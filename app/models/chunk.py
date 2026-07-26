@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Integer, Text, func
+from sqlalchemy import Computed, ForeignKey, Integer, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
@@ -53,7 +53,9 @@ class Chunk(Base):
     # Generated column (see migration): kept in sync with `content` by
     # Postgres itself, not application code, so it can never drift. Named
     # content_tsv to match the column name SIM-240's hybrid_search reads.
-    content_tsv: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
+    content_tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('english', content)", persisted=True), nullable=True
+    )
 
     # What kind of source content this chunk holds (e.g. "text", "table",
     # "chart"). Populated by AE-A-RETR-1/2, not this table's own concern —
