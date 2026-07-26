@@ -14,7 +14,7 @@ docker/userlist.txt
 .claude
 .env
 docker/ca-certificate.crt
-docs/
+docs_personal/
 
 # Local test PDFs — may contain confidential client documents (CIMs, financials).
 # Never commit real deal documents to this repo.
