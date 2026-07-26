@@ -123,9 +123,7 @@ async def ingest(request: Request, filename: str = "upload.pdf") -> JSONResponse
             _row_from_chunk(c, org_id, embedding=e, embedding_version=version)
             for c, e in zip(chunks, embeddings, strict=True)
         )
-    return JSONResponse(
-        {"filename": filename, "chunks": len(chunks), "embedded": _has_voyage()}
-    )
+    return JSONResponse({"filename": filename, "chunks": len(chunks), "embedded": _has_voyage()})
 
 
 @app.post("/query")
