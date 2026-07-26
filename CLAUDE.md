@@ -55,6 +55,82 @@ Do not open DB connections at application startup — that would hold a PgBounce
 
 `app/core/security.py::decode_clerk_jwt` is fully implemented: it fetches Clerk's JWKS (cached, 1h TTL), verifies the JWT signature with `python-jose`, and extracts the tenant org id and role from either the v1 (`org_id`/`org_role`) or v2 (`o.id`/`o.rol`) claim shape via `_extract_org`. Audience is deliberately not validated — Clerk's default session tokens carry no `aud` claim.
 
+### Admin portal (`/api/admin`) — strictly separate from the product portal
+
+A two-tier admin surface (platform admins — Simpero-internal staff who manage
+client organizations — and per-org client admins) mounted under `/api/admin`,
+entirely independent of the product API (`/api/deals` etc.). **Admin and
+product-portal code must never share logic, dependencies, or guards — this
+separation is deliberate and must be preserved on every change, not just at
+initial build time:**
+
+- Admin auth dependency: `app/core/admin_dependencies.py::get_admin_db` /
+  `require_org_admin` / `require_platform_admin` — never the product
+  dependency `app/dependencies.py::get_db`, even though both follow the same
+  `SET LOCAL app.org_id` discipline.
+- Admin identity: the `clerk_admin_users` table (`app/models/clerk_admin_user.py`,
+  `app/repo/AdminUserRepo.py`) — never `users`/`UserRepo`. A client admin is
+  admin-only *by default* — they don't get a product `users` row just for
+  being invited as an admin — but a product member explicitly **promoted**
+  to admin (`PATCH /admin/members/{user_id}` and its cross-org sibling) keeps
+  their existing `users` row alongside their new/reactivated
+  `clerk_admin_users` row. Dual identity is a real, supported state for that
+  one path, not a bug — don't assume the two tables are mutually exclusive.
+- Admin routers live under `app/api/admin/` and must not import from, or be
+  imported by, product routers (`app/api/deals.py` etc.).
+- Admin Clerk adapter: `app/services/admin/clerk_admin.py` — kept separate
+  from any product-facing Clerk calls (the one shared exception is
+  `app/core/security.py::fetch_clerk_organization`, reused read-only by both
+  sides since it predates the admin portal).
+- Admin request/response schemas live under `app/schemas/admin/` and are
+  never reused for product-facing responses, even when the shape looks
+  similar.
+- **One deliberate, narrow exception to the "never share logic" rule:**
+  `app/core/dependencies.py::_ensure_user_provisioned` (product-side JIT
+  provisioning, nothing to do with `/api/admin`) reactivates a soft-deleted
+  `users` row (`UserRepo.reactivate()`) when a member removed via the admin
+  portal is later re-invited and logs back in. This isn't admin logic
+  reaching into product code — `users.status`/`deactivated_at` is one shared
+  column set that both the admin portal (writer of removals) and product JIT
+  provisioning (writer of first-logins and now reactivations) legitimately
+  need to keep consistent. If you're tempted to add a second such exception,
+  don't assume this one licenses it — get it confirmed explicitly the way
+  this one was, rather than treating it as precedent for convenience.
+
+Authorization is **table-authoritative**: every admin guard checks the
+`clerk_admin_users` row (`status == "active"`, `admin_type`), never the JWT
+`org_role` claim directly. The JWT is trusted at exactly two points: inside
+`get_admin_db`'s JIT provisioning step, to grant a brand-new admin row,
+downgrade an existing one (D3 sync), or reactivate a previously-inactive one
+on a fresh admin-role login — everywhere else (every real guard, every
+route handler), the table is the source of truth, never `org_role` directly.
+
+A platform admin's `get_admin_db` session stays clamped to their **own** org
+(`app.org_id`) for the whole request, even on the cross-org routes
+(`platform_invitations.py`, `platform_members.py`) — those reach a *different*
+org only via the Clerk Backend API, never via a direct DB query, with one
+exception: local writes that must legitimately touch the target org's rows
+(role-change and removal on `platform_members.py`) use
+`admin_dependencies.py::_set_org_scope` to re-issue `SET LOCAL app.org_id`
+mid-transaction, re-pointing RLS at the target org for just those statements,
+then back at the caller's own org before any audit write. This works because
+`SET LOCAL` persists for the whole transaction and can be re-issued as many
+times as needed — it is **not** a new transaction, and trying to open one
+(`session.begin()`) inside a route handler will fail: `get_admin_db` already
+holds one open transaction for the entire yielded request. If you add a new
+cross-org local write, reuse `_set_org_scope` rather than re-deriving this.
+
+Keeping this boundary strict is deliberate housekeeping, not caution for its
+own sake: it lets the admin surface's auth model, RLS scoping, and session
+lifecycle evolve independently of the product portal's, without either side
+ever risking a change that destabilizes the other. When adding to either
+surface, don't reach across it for a "quick reuse" of a model, repo, guard,
+or schema that happens to look similar — duplicate the few lines instead.
+
+Full design history, decisions, and open gaps for this feature:
+`docs/plans/admin-portal-backend.md` (Rev. 3) and
+`docs/implementations/2026-07-24-admin-portal-backend.md`.
+
 ### Audit log immutability
 
 `UPDATE` and `DELETE` on `audit_log` are revoked from `dd_app` at the database level. Do not add application-level guards — they can be bypassed and give false assurance. The `AuditLog` model in `app/models/audit_log.py` is commented out pending the table's full implementation.

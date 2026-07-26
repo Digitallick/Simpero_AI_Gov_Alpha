@@ -24,7 +24,7 @@ def compute_month_bounds(now: datetime | None = None) -> tuple[datetime, datetim
 
 
 def compute_pipeline_value_delta(current: int, prior: int) -> PipelineValueDelta:
-    """"new" when there was nothing in the prior window and there is now —
+    """ "new" when there was nothing in the prior window and there is now —
     a percentage/delta against zero isn't meaningful. None when both are
     zero (nothing to report either way)."""
     if prior == 0:

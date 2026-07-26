@@ -89,9 +89,7 @@ def _seed_session(owner_conn, org_pk: int, deal_id: str, **fields: Any) -> str:
         **fields,
     }
     cols = ", ".join(columns)
-    placeholders = ", ".join(
-        "%s::jsonb" if k == "memo_json" else "%s" for k in columns
-    )
+    placeholders = ", ".join("%s::jsonb" if k == "memo_json" else "%s" for k in columns)
     values = [json.dumps(v) if k == "memo_json" else v for k, v in columns.items()]
     with owner_conn.cursor() as cur:
         cur.execute(
@@ -202,9 +200,7 @@ def test_history_list_get_delete(client, owner_conn, seeded_org):
     assert client.get(f"/history/{session_id}").json() is None
 
     with owner_conn.cursor() as cur:
-        cur.execute(
-            "SELECT event_type FROM human_audit_log WHERE session_id = %s", (session_id,)
-        )
+        cur.execute("SELECT event_type FROM human_audit_log WHERE session_id = %s", (session_id,))
         assert cur.fetchone()[0] == "memo_deleted"
 
 
@@ -252,7 +248,12 @@ def test_investment_profile_present(client, owner_conn, seeded_org):
         cur.execute(
             "INSERT INTO investment_profiles (org_id, firm_name, mandate, weights) "
             "VALUES (%s, %s, %s::jsonb, %s::jsonb)",
-            (seeded_org["org_pk"], "Acme Capital", json.dumps({"checkSize": "5-10m"}), json.dumps({})),
+            (
+                seeded_org["org_pk"],
+                "Acme Capital",
+                json.dumps({"checkSize": "5-10m"}),
+                json.dumps({}),
+            ),
         )
     _authed(seeded_org["clerk_org_id"], "user-1")
 
