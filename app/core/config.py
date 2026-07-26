@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     clerk_jwt_audience: str
     clerk_jwks_url: str
     valkey_url: str
+    voyage_api_key: str = ""
+    embedding_model: str = "voyage-4-large"
+    # Must match the chunks.embedding column dim (Vector(1024)); changing it
+    # needs a matching migration. voyage-4 serves 2048/1024/512/256.
+    embedding_dimension: int = 1024
     environment: str = "development"
     cors_allowed_origins: str = "http://localhost:3000"
     # Clerk org id of the Simpero platform org (internal staff). "" => the
