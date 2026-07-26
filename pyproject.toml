@@ -15,6 +15,7 @@ dependencies = [
     "psycopg2-binary>=2.9.12",
     "boto3>=1.34.0",
     "saq[redis,web]>=0.26.4",
+    "pgvector>=0.5.0",
     "email-validator>=2.3.0",
 ]
 # Docling/pypdf/openpyxl (the parse-service-only deps) left with
