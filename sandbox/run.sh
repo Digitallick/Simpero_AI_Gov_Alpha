@@ -3,9 +3,22 @@
 # print exactly what lands in the claims table.
 #
 #   ./sandbox/run.sh /path/to/your-cim.pdf [--entity "Target Co"] [--org demo]
+#                    [--tables-only | --prose | --qualitative]
+#
+# TIERS (default --qualitative -- the full pipeline the sandbox exists to show):
+#   --tables-only   deterministic table extraction; no model, no key.
+#   --prose         + numeric facts stated in prose      (one model call / prose page).
+#   --qualitative   + claims that carry no number         (two model calls / prose page).
+# The prose tiers call the Anthropic API and need ANTHROPIC_API_KEY (or
+# ANTHROPIC_AUTH_TOKEN) in your environment. This script checks for it up front
+# and stops before touching your CIM if it is missing -- so set it, or pass
+# --tables-only for a key-free run.
 #
 # CONFIDENTIALITY: the CIM you pass is copied into sandbox/cim/, which is
-# gitignored. It is never committed. Do not commit real deal documents.
+# gitignored. It is never committed. Do not commit real deal documents. The
+# prose tiers additionally SEND each prose page's text to the Anthropic API --
+# a real deal document leaves your machine on those tiers; --tables-only never
+# makes a network call.
 #
 # The two halves run as two processes across the C3 seam, exactly as in
 # production: the parse service (a sibling repo) emits claims as JSON; the
@@ -24,18 +37,33 @@ ok()   { printf '\033[1;32m      ✓ %s\033[0m\n' "$1"; }
 ENTITY="Target Co"
 ORG_KEY="sandbox_demo"
 PDF=""
+TIER_FLAG="--qualitative"   # default: the full pipeline
+TIER_NAME="tables + prose + qualitative"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --entity) ENTITY="$2"; shift 2 ;;
-    --org)    ORG_KEY="$2"; shift 2 ;;
-    -*)       echo "unknown option: $1"; exit 1 ;;
-    *)        PDF="$1"; shift ;;
+    --entity)       ENTITY="$2"; shift 2 ;;
+    --org)          ORG_KEY="$2"; shift 2 ;;
+    --tables-only)  TIER_FLAG="";              TIER_NAME="tables only";                 shift ;;
+    --prose)        TIER_FLAG="--prose";       TIER_NAME="tables + prose";              shift ;;
+    --qualitative)  TIER_FLAG="--qualitative"; TIER_NAME="tables + prose + qualitative"; shift ;;
+    -*)             echo "unknown option: $1"; exit 1 ;;
+    *)              PDF="$1"; shift ;;
   esac
 done
 
-[[ -n "$PDF" ]]        || { echo "usage: ./sandbox/run.sh <cim.pdf> [--entity NAME] [--org KEY]"; exit 1; }
+[[ -n "$PDF" ]]        || { echo "usage: ./sandbox/run.sh <cim.pdf> [--entity NAME] [--org KEY] [--tables-only|--prose|--qualitative]"; exit 1; }
 [[ -f "$PDF" ]]        || { echo "error: no such file: $PDF"; exit 1; }
 [[ -d "$PARSER_DIR" ]] || { echo "error: parse service repo not found at $PARSER_DIR"; echo "  clone Simpero_Gov_AI_Services beside this repo, or set PARSER_REPO=/path/to/it"; exit 1; }
+# The prose tiers call the Anthropic API. Fail here, before copying the CIM or
+# starting any work, rather than part way through -- and do NOT read the key
+# from sandbox/.env.sandbox (that file is committed; an API key never belongs in
+# it). It must come from your own environment.
+if [[ -n "$TIER_FLAG" && -z "${ANTHROPIC_API_KEY:-}" && -z "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
+  echo "error: $TIER_FLAG needs ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) in your environment."
+  echo "  export it in your shell, or re-run with --tables-only for a key-free run."
+  exit 1
+fi
+
 # grep without -q: under pipefail, -q's early exit SIGPIPEs docker compose
 # and randomly fails this check even when the sandbox is up.
 "${COMPOSE[@]}" ps --status running 2>/dev/null | grep postgres >/dev/null || { echo "error: the sandbox is not running -- run ./sandbox/up.sh first"; exit 1; }
@@ -46,6 +74,7 @@ printf '========================================================================
 echo "    Input  : $PDF"
 echo "    Entity : $ENTITY"
 echo "    Tenant : $ORG_KEY"
+echo "    Tiers  : $TIER_NAME"
 
 set -a
 # shellcheck disable=SC1091
@@ -62,8 +91,13 @@ step "1/5" "Copying the CIM into sandbox/cim/  (gitignored, never committed)"
 [[ "$PDF" -ef "$LOCAL_PDF" ]] || cp "$PDF" "$LOCAL_PDF"
 ok "$(basename "$PDF")"
 
-step "2/5" "Parse → extract → emit   (docling layout analysis)"
-( cd "$PARSER_DIR" && env -u VIRTUAL_ENV uv run python scripts/emit_claims.py "$LOCAL_PDF" --entity "$ENTITY" ) > "$CLAIMS_JSON" 2> "$EMIT_LOG" &
+step "2/5" "Parse → extract → emit   ($TIER_NAME; docling layout analysis)"
+# Empty tier flag (tables only) must not become an empty argv entry, so the flag
+# is built as an array. The parser subprocess inherits this shell's environment,
+# so ANTHROPIC_API_KEY reaches it without being echoed anywhere.
+EMIT_ARGS=(scripts/emit_claims.py "$LOCAL_PDF" --entity "$ENTITY")
+[[ -n "$TIER_FLAG" ]] && EMIT_ARGS+=("$TIER_FLAG")
+( cd "$PARSER_DIR" && env -u VIRTUAL_ENV uv run python "${EMIT_ARGS[@]}" ) > "$CLAIMS_JSON" 2> "$EMIT_LOG" &
 EMIT_PID=$!
 # ASCII frames on purpose: macOS ships bash 3.2, whose ${var:i:1} slices by
 # BYTE — multibyte spinner glyphs come out as mangled fragments.

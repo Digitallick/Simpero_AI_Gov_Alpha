@@ -16,7 +16,7 @@
 # No PgBouncer here — SET LOCAL tenant scoping works the same on a direct
 # connection; the pooler only matters for connection scaling in production.
 
-name: simpero-dev
+name: simpero-alpha-dev
 
 services:
   postgres:

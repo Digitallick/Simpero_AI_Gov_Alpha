@@ -46,8 +46,15 @@ async def _ensure_user_provisioned(session: AsyncSession, claims: dict[str, Any]
     name/email stay NULL here — the token doesn't carry them; the frontend
     pushes them via POST /auth/sync-profile after login.
     """
-    user_id = await session.scalar(select(Users.id).where(Users.clerk_user_id == claims["user_id"]))
-    if user_id is not None:
+    existing = await session.scalar(select(Users).where(Users.clerk_user_id == claims["user_id"]))
+    if existing is not None:
+        # A previously-removed-then-re-invited member's row stays
+        # status='inactive' forever otherwise — their Clerk org membership
+        # is genuinely active again post-re-invite, but nothing else tells
+        # the DB row. role/name/email JIT-provisioning behavior below is
+        # unrelated and untouched by this reactivation.
+        if existing.status != "active":
+            await UserRepo(session).reactivate(claims["user_id"])
         return
 
     # ON CONFLICT DO NOTHING throughout: on first login the frontend fires

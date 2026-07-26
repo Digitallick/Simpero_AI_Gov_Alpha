@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,4 +31,15 @@ class UserRepo(BaseRepo[Users, dict]):
         """
         await self.session.execute(
             pg_insert(Users).values(**data).on_conflict_do_nothing(index_elements=["clerk_user_id"])
+        )
+
+    async def reactivate(self, clerk_user_id: str) -> None:
+        """Re-invitation path: a soft-deleted (admin-removed) member logging
+        back in has their row flipped back to active — see
+        _ensure_user_provisioned in app/core/dependencies.py. RLS
+        (org_isolation) scopes this UPDATE to the caller's own org."""
+        await self.session.execute(
+            update(Users)
+            .where(Users.clerk_user_id == clerk_user_id)
+            .values(status="active", deactivated_at=None)
         )

@@ -42,6 +42,18 @@ _VERIFICATION_METHODS = (
 )
 
 _LOCATION_KINDS = ("pdf", "xlsx", "docx")
+# Which extraction contract produced a claim. Absent means quantitative, so
+# every row written before this column existed stays valid.
+_CLAIM_KINDS = ("quantitative", "qualitative")
+_ASSERTION_CLASSES = (
+    "related_party",
+    "operating_model",
+    "market_definition",
+    "competitive_position",
+    "commercial_terms",
+    "risk_or_dependency",
+    "plan_or_commitment",
+)
 
 
 def _sql_list(values: tuple[str, ...]) -> str:
@@ -124,6 +136,13 @@ class Claim(Base):
 
     section: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Which extraction contract produced this claim. Absent (NULL) means
+    # quantitative -- the numeric path predates this column. A qualitative claim
+    # carries no magnitude by design (value_type text, normalized null) and
+    # names its assertion_class; the CHECK below makes that non-bypassable.
+    claim_kind: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    assertion_class: Mapped[str | None] = mapped_column(String(24), nullable=True)
+
     # Groups fragments of one logical table, including one split across pages.
     # This is what carries element structure in alpha — there is no elements
     # table and no element_id FK (decision: Option C, 2026-07-17).
@@ -144,6 +163,20 @@ class Claim(Base):
             name="ck_claims_verification_method",
         ),
         CheckConstraint(f"kind IN ({_sql_list(_LOCATION_KINDS)})", name="ck_claims_kind"),
+        CheckConstraint(
+            f"claim_kind IS NULL OR claim_kind IN ({_sql_list(_CLAIM_KINDS)})",
+            name="ck_claims_claim_kind",
+        ),
+        CheckConstraint(
+            f"assertion_class IS NULL OR assertion_class IN ({_sql_list(_ASSERTION_CLASSES)})",
+            name="ck_claims_assertion_class",
+        ),
+        # A qualitative claim is a text assertion by construction: it must name
+        # its assertion_class. Mirrors the contract's qualitative allOf.
+        CheckConstraint(
+            "claim_kind IS DISTINCT FROM 'qualitative' OR assertion_class IS NOT NULL",
+            name="ck_claims_qualitative_has_class",
+        ),
         CheckConstraint(
             "period_kind IS NULL OR period_kind IN ('A', 'E', 'P')",
             name="ck_claims_period_kind",

@@ -1,12 +1,14 @@
 # Local sandbox
 
-Run the whole pipeline on your own machine — a CIM goes in, cited claims land in a local Postgres, and an interactive HTML report opens in your browser — with **zero cloud dependencies**. No DigitalOcean cluster, no firewall rule, no credentials.
+Run the whole pipeline on your own machine — a CIM goes in, cited claims land in a local Postgres, and an interactive HTML report opens in your browser — with **no cloud database**. No DigitalOcean cluster, no firewall rule.
 
 ```
 ./sandbox/up.sh                     # local Postgres + Valkey, roles, migrations
 ./sandbox/run.sh path/to/cim.pdf    # parse → extract → emit → ingest → report
 ./sandbox/down.sh                   # stop  (--wipe also deletes the data)
 ```
+
+The infrastructure needs no credentials. **Extraction has two tiers, and the prose tier does:** table extraction is deterministic and offline, but reading facts out of prose calls the Anthropic API, so the default run needs `ANTHROPIC_API_KEY` (see [§3](#3-run-the-pipeline-on-a-cim)). Pass `--tables-only` for a fully offline, key-free run.
 
 These instructions are verified end-to-end on macOS (Apple Silicon) with Colima.
 
@@ -93,13 +95,28 @@ This pulls `pgvector/pgvector:pg16` (stock Postgres 16 with the pgvector extensi
 ## 3. Run the pipeline on a CIM
 
 ```bash
+# the full pipeline (default) — needs a key, see below:
+export ANTHROPIC_API_KEY=sk-ant-...
 ./sandbox/run.sh /path/to/your-cim.pdf --entity "Target Co"
+
+# or a fully offline, key-free run:
+./sandbox/run.sh /path/to/your-cim.pdf --entity "Target Co" --tables-only
 ```
 
 - `--entity` names the company the claims are about (optional; defaults to "Target Co").
 - `--org` sets the demo tenant key (optional; defaults to `sandbox_demo`).
 
-**Confidentiality:** the CIM you pass is copied into `sandbox/cim/`, which is **gitignored and never committed**. Real deal documents are confidential — don't commit them. No sample document ships in this repo; bring your own (any financial-statement PDF with a table under a scale header works well — income statements are ideal).
+**Extraction tiers** — each a strict superset of the one above it:
+
+| flag | tiers | model calls | key |
+|---|---|---|---|
+| `--tables-only` | tables | none | not needed |
+| `--prose` | + numeric facts in prose | 1 / prose page | **required** |
+| `--qualitative` *(default)* | + claims that carry no number | 2 / prose page | **required** |
+
+The prose tiers call the Anthropic API and require **`ANTHROPIC_API_KEY`** (or `ANTHROPIC_AUTH_TOKEN`) exported in your shell. `run.sh` checks for it up front and stops before touching your CIM if it is absent. The key is **never** read from `sandbox/.env.sandbox` — that file is committed, and an API key does not belong in it; it comes from your environment only. Your parse-service checkout must be recent enough to have the prose tiers (the `--prose`/`--qualitative` flags on `emit_claims.py`); `git pull` it if `--tables-only` works but the prose tiers report an unknown flag.
+
+**Confidentiality:** the CIM you pass is copied into `sandbox/cim/`, which is **gitignored and never committed**. Real deal documents are confidential — don't commit them. The prose tiers additionally **send each prose page's text to the Anthropic API**, so a real deal document leaves your machine on those tiers; `--tables-only` makes no network call at all. No sample document ships in this repo; bring your own (any financial-statement PDF with a table under a scale header works well — income statements are ideal).
 
 `run.sh` narrates the five steps demo-style — a live spinner with elapsed time during the parse (the slow step on long documents), then a summary of what landed instead of a raw table dump — and finishes by opening the HTML report in your browser:
 

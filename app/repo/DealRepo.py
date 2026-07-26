@@ -38,9 +38,7 @@ class DealRepo(BaseRepo[Deal, dict]):
                     func.count(Deal.created_at >= current_start).filter(
                         Deal.created_at >= current_start
                     ),
-                    func.coalesce(
-                        func.sum(size_expr).filter(Deal.created_at >= current_start), 0
-                    ),
+                    func.coalesce(func.sum(size_expr).filter(Deal.created_at >= current_start), 0),
                     func.count().filter(
                         Deal.created_at >= prior_start, Deal.created_at < prior_end
                     ),
