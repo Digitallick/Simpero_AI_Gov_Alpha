@@ -19,7 +19,7 @@ EMBEDDING_DIM = 1536
 class Chunk(Base):
     """One retrievable slice of text or table cut out of an uploaded document
     (Epic 8 — Retrieval). Search target for both dense (embedding) and sparse
-    (sparse_search) lookups; not itself a claim — claims.chunk_id points back
+    (content_tsv) lookups; not itself a claim — claims.chunk_id points back
     here once claim emission is wired to it (out of scope for this table).
 
     No FK on document_id: the documents/data_sources table doesn't exist yet,
@@ -50,8 +50,14 @@ class Chunk(Base):
     embedding_version: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Generated column (see migration): kept in sync with `content` by
-    # Postgres itself, not application code, so it can never drift.
-    sparse_search: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
+    # Postgres itself, not application code, so it can never drift. Named
+    # content_tsv to match the column name SIM-240's hybrid_search reads.
+    content_tsv: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
+
+    # What kind of source content this chunk holds (e.g. "text", "table",
+    # "chart"). Populated by AE-A-RETR-1/2, not this table's own concern —
+    # nullable and unconstrained here.
+    element_type: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
