@@ -1,10 +1,14 @@
 # Local sandbox
 
-Run the whole pipeline on your own machine — a CIM goes in, cited claims land in a local Postgres, and an interactive HTML report opens in your browser — with **no cloud database**. No DigitalOcean cluster, no firewall rule.
+Run the whole pipeline on your own machine — with **no cloud database**. No DigitalOcean cluster, no firewall rule. Two modes, each its own UI:
+
+- **Parsing** — a CIM goes in, cited claims land in a local Postgres, and an interactive HTML **claims report** opens in your browser.
+- **Retrieval** — upload a CIM, ask a question, and see the **chunks** the hybrid search returns (dense + sparse), live in a small web app.
 
 ```
-./sandbox/up.sh                     # local Postgres + Valkey, roles, migrations
-./sandbox/run.sh path/to/cim.pdf    # parse → extract → emit → ingest → report
+./sandbox/up.sh                     # once: local Postgres + Valkey, roles, migrations
+./sandbox/run.sh path/to/cim.pdf    # PARSING   → parse → extract → emit → ingest → claims report
+./sandbox/retrieve.sh               # RETRIEVAL → serve the upload / ask / chunks UI
 ./sandbox/down.sh                   # stop  (--wipe also deletes the data)
 ```
 
@@ -189,7 +193,47 @@ uv run --project ../Simpero_Gov_AI_Services python sandbox/export_report.py \
 
 ---
 
-## 5. Query the claims yourself
+## 5. Retrieval mode — upload a PDF, ask, see the chunks
+
+Parsing mode (above) lands *claims*; retrieval mode is the other half — it cuts a
+document into **chunks**, embeds them, and answers a natural-language question with
+the most relevant ones through the hybrid dense + sparse search. Unlike the static
+claims report, this is interactive, so it is a small served app rather than a file:
+
+```bash
+# dense + sparse (recommended): put your Voyage key in the backend .env first
+echo 'VOYAGE_API_KEY=...' >> .env       # .env is gitignored — never committed
+
+./sandbox/retrieve.sh                   # starts the app, opens http://localhost:8010
+```
+
+Then in the browser:
+
+- **1 · Document** — pick a CIM and click *Ingest*. It parses + chunks the PDF in
+  the parse service, embeds each chunk, and stores them scoped to a demo tenant.
+  A CIM takes ~a minute (the docling parse); re-uploading replaces the previous
+  document's chunks.
+- **2 · Ask** — type any question and hit *Search* to see the ranked chunks (score,
+  page, element type, text).
+
+**Embeddings are a separate provider from Anthropic** — the query and chunks are
+embedded with **voyage-4-large**, so retrieval reads `VOYAGE_API_KEY` (from the
+backend `.env`, git-ignored, or your shell), independent of `ANTHROPIC_API_KEY`:
+
+- **with a key** — the page shows a `dense + sparse` badge, and semantic questions
+  work even when the wording is absent from the document (e.g. *"how is the business
+  performing financially?"* surfaces the EBITDA / CAGR chunks).
+- **without a key** — it runs `sparse-only` (keyword search): chunks go in
+  unembedded and only exact-term matches return. A full natural-language question
+  often comes back empty, because the keyword leg ANDs the words together — set the
+  key for real semantic retrieval.
+
+Sandbox only: writes to the LOCAL Postgres, never a cloud DB. Set `PORT=...` before
+`retrieve.sh` to use a different port.
+
+---
+
+## 6. Query the claims yourself
 
 The report and step-4 summary cover the common questions; for anything else,
 go straight at the database:
@@ -201,7 +245,7 @@ docker compose -f sandbox/docker-compose.yml exec postgres \
 
 ---
 
-## 6. Tear down
+## 7. Tear down
 
 ```bash
 ./sandbox/down.sh          # stop the containers, keep the data
