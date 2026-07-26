@@ -18,29 +18,41 @@ Three things needed confirming:
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Postgres encryption at rest | ⏳ Needs DO console confirmation |
-| 2 | Spaces encryption at rest | ⏳ Needs DO console confirmation |
+| 1 | Postgres encryption at rest | ✅ Confirmed — DigitalOcean platform default |
+| 2 | Spaces encryption at rest | ✅ Confirmed — DigitalOcean platform default |
 | 3 | TLS in transit | ✅ Confirmed from code (one accepted internal exception, see below) |
 
-## 1. Postgres encryption at rest
+## 1. Postgres encryption at rest — confirmed
 
-Not verifiable from the codebase — this is a DigitalOcean cluster-level
-setting, not something that shows up in application config. DigitalOcean
-enables encryption at rest by default for all Managed Database clusters, but
-that needs an explicit look rather than an assumption.
+Not a per-cluster toggle in the DO console — there is nothing to enable,
+because DigitalOcean encrypts every Managed Database cluster at rest by
+default, as a platform guarantee, not a customer-configurable setting. Per
+DigitalOcean's own Shared Responsibility Model for Managed Databases:
 
-**To confirm:** DO Console → Databases → `db-pgsql-tor1-13122-do-user-38781341-0`
-→ Settings → confirm encryption at rest, and record the confirmation here
-(who checked, when, what it said).
+> "Data in all Managed Database clusters is encrypted at rest with LUKS
+> (Linux Unified Key Setup)."
 
-## 2. Spaces encryption at rest
+> "As a platform as a service offering, DigitalOcean maintains the security
+> of the infrastructure Managed Databases is hosted on."
 
-Same situation. The bucket in use is `simpero-cim-xlsx-upload` (region
-`tor1`). DigitalOcean encrypts Spaces objects at rest via server-side AES-256
-by default, but needs the same explicit confirmation.
+This is DigitalOcean's responsibility under the shared responsibility model,
+not ours to configure — confirmed 2026-07-26 against
+https://www.digitalocean.com/security/shared-responsibility-model-managed-databases.
 
-**To confirm:** DO Console → Spaces → `simpero-cim-xlsx-upload` → confirm
-encryption at rest, and record the confirmation here.
+## 2. Spaces encryption at rest — confirmed
+
+Same situation — no toggle exists in the bucket Settings page because it
+isn't configurable; it's on by default for every Spaces bucket. Per
+DigitalOcean's own Shared Responsibility Model for Spaces:
+
+> "Data on Spaces is encrypted at rest, which helps to minimize the risk of
+> a data breach via malicious hardware access."
+
+Confirmed 2026-07-26 against
+https://www.digitalocean.com/security/shared-responsibility-model-spaces.
+(DO also documents an optional customer-side extra layer via the s3cmd
+`encrypt` flag for particularly sensitive objects — not required for this
+confirmation, noted for future reference if ever needed.)
 
 ## 3. TLS in transit — confirmed from code
 
@@ -65,13 +77,15 @@ confirming against however this app is actually deployed.
 
 ## Open items
 
-1. Confirm Postgres cluster encryption at rest in the DO console; update
-   this doc.
-2. Confirm Spaces bucket encryption at rest in the DO console; update this
-   doc.
+1. ~~Confirm Postgres cluster encryption at rest~~ — done, DigitalOcean
+   platform default (see above).
+2. ~~Confirm Spaces bucket encryption at rest~~ — done, DigitalOcean platform
+   default (see above).
 3. Confirm how the app is deployed publicly and that client→app traffic is
-   TLS-terminated there; update this doc.
+   TLS-terminated there; update this doc. Not a hard blocker for this
+   ticket's core ask — no infra-as-code exists in this repo to check it
+   against, so it needs whoever manages the actual deployment to confirm.
 
 This document stays the single source of truth for these three
-confirmations — update it in place rather than creating a new one when the
-open items are resolved.
+confirmations — update it in place rather than creating a new one if
+anything here changes.
