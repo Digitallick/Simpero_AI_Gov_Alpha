@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Simpero — Retrieval sandbox</title>
+<style>
+  :root { --bg:#0e1218; --panel:#161b22; --ink:#e7ebf1; --mid:#9aa4b4; --rule:#29313d;
+          --accent:#5aa6c4; --ok:#4fb07a; --warn:#d9a441; --chip:#1c232e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .sub { color: var(--mid); margin: 0 0 20px; font-size: 14px; }
+  .badge { display:inline-block; font:12px ui-monospace, Menlo, monospace; padding:2px 9px;
+           border-radius:999px; border:1px solid var(--rule); }
+  .badge.dense { color:var(--ok); border-color:color-mix(in srgb,var(--ok) 45%,transparent); }
+  .badge.sparse { color:var(--warn); border-color:color-mix(in srgb,var(--warn) 45%,transparent); }
+  .panel { background:var(--panel); border:1px solid var(--rule); border-radius:12px;
+           padding:18px; margin:16px 0; }
+  .panel h2 { font:12px ui-monospace, Menlo, monospace; letter-spacing:.1em;
+              text-transform:uppercase; color:var(--mid); margin:0 0 12px; }
+  input[type=file] { color: var(--mid); font-size:14px; }
+  input[type=text] { width:100%; padding:10px 12px; background:var(--bg); color:var(--ink);
+                     border:1px solid var(--rule); border-radius:8px; font-size:15px; }
+  button { background:var(--accent); color:#08121a; border:0; border-radius:8px;
+           padding:10px 16px; font-size:14px; font-weight:650; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:10px; align-items:center; }
+  .status { color:var(--mid); font-size:13px; margin-top:10px; min-height:18px; }
+  .hit { border:1px solid var(--rule); border-radius:10px; padding:12px 14px; margin:10px 0;
+         background:var(--bg); }
+  .hit .meta { display:flex; gap:10px; align-items:center; font:12px ui-monospace, Menlo, monospace;
+               color:var(--mid); margin-bottom:6px; }
+  .hit .etype { color:var(--accent); }
+  .hit .score { color:var(--warn); }
+  .hit .content { white-space:pre-wrap; font-size:14px; }
+  .muted { color:var(--mid); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Retrieval sandbox <span id="mode" class="badge">…</span></h1>
+  <p class="sub">Upload a CIM, then ask a question. Chunks are cut by the parse service, embedded,
+     and retrieved through the real hybrid query path — all against the local sandbox.</p>
+
+  <div class="panel">
+    <h2>1 · Document</h2>
+    <div class="row">
+      <input type="file" id="pdf" accept="application/pdf" />
+      <button id="ingestBtn">Ingest</button>
+    </div>
+    <div class="status" id="ingestStatus"></div>
+  </div>
+
+  <div class="panel">
+    <h2>2 · Ask</h2>
+    <div class="row">
+      <input type="text" id="q" placeholder="e.g. how did gaming revenue grow?" />
+      <button id="queryBtn">Search</button>
+    </div>
+    <div class="status" id="queryStatus"></div>
+    <div id="results"></div>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  fetch("/mode").then(r => r.json()).then(m => {
+    const b = $("mode");
+    b.textContent = m.dense ? "dense + sparse" : "sparse-only (no key)";
+    b.className = "badge " + (m.dense ? "dense" : "sparse");
+  });
+
+  $("ingestBtn").onclick = async () => {
+    const f = $("pdf").files[0];
+    if (!f) { $("ingestStatus").textContent = "pick a PDF first."; return; }
+    $("ingestBtn").disabled = true;
+    $("ingestStatus").textContent = "parsing + chunking + ingesting… (a CIM can take a minute)";
+    try {
+      const r = await fetch("/ingest?filename=" + encodeURIComponent(f.name),
+                            { method: "POST", body: f });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "ingest failed");
+      $("ingestStatus").textContent =
+        `ingested ${d.chunks} chunks from ${d.filename} — ${d.embedded ? "embedded (dense+sparse)" : "no embeddings (sparse-only)"}.`;
+    } catch (e) { $("ingestStatus").textContent = "error: " + e.message; }
+    finally { $("ingestBtn").disabled = false; }
+  };
+
+  const runQuery = async () => {
+    const q = $("q").value.trim();
+    if (!q) return;
+    $("queryBtn").disabled = true;
+    $("queryStatus").textContent = "searching…";
+    $("results").innerHTML = "";
+    try {
+      const r = await fetch("/query", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "query failed");
+      $("queryStatus").textContent =
+        `${d.hits.length} chunk(s) · ${d.dense ? "dense + sparse" : "sparse (keyword) only"}`;
+      $("results").innerHTML = d.hits.map(h => `
+        <div class="hit">
+          <div class="meta"><span class="score">score ${h.score}</span>
+            <span>p${h.page}</span><span class="etype">${h.element_type}</span></div>
+          <div class="content"></div>
+        </div>`).join("") || '<p class="muted">no chunks matched.</p>';
+      // set text via textContent to avoid injecting chunk content as HTML
+      document.querySelectorAll("#results .hit .content").forEach((el, i) => {
+        el.textContent = d.hits[i].content;
+      });
+    } catch (e) { $("queryStatus").textContent = "error: " + e.message; }
+    finally { $("queryBtn").disabled = false; }
+  };
+  $("queryBtn").onclick = runQuery;
+  $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") runQuery(); });
+</script>
+</body>
+</html>
