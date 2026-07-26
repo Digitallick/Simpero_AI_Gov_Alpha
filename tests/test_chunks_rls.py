@@ -116,7 +116,7 @@ async def test_org_isolation_rejects_cross_org_insert(db_session, org_a_id, org_
 
 
 async def test_embedding_rejects_wrong_dimension(db_session, org_a_id):
-    """The column is fixed at 1536 dims — pgvector must reject a mismatched
+    """The column is fixed at 1024 dims — pgvector must reject a mismatched
     vector at insert time, not silently truncate/pad it."""
     wrong_dim_literal = "[" + ",".join(["0.1"] * 10) + "]"
     with pytest.raises(DBAPIError):

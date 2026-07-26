@@ -10,10 +10,11 @@ from sqlalchemy.types import DateTime
 from app.core.database import Base
 from app.models.organisation import Organisation
 
-# Embedding dimension is 1536 (OpenAI text-embedding-3-small / ada-002 sized) —
-# no embedding provider is wired up yet, this is the common default. Changing
-# it later means a new migration + full re-embed, not a column-type tweak.
-EMBEDDING_DIM = 1536
+# Embedding dimension is 1024, voyage-4-large's default Matryoshka size (it also
+# supports 256/512/2048). 1024 is the largest that fits pgvector's 2000-dim HNSW
+# limit on the `vector` type; 2048 would require `halfvec`. Changing it later
+# means a new migration + full re-embed, not a column-type tweak.
+EMBEDDING_DIM = 1024
 
 
 class Chunk(Base):

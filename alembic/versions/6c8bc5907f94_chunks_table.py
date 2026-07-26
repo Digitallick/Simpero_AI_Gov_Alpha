@@ -46,7 +46,7 @@ down_revision: str | None = "920070316626"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-EMBEDDING_DIM = 1536
+EMBEDDING_DIM = 1024
 
 
 def upgrade() -> None:
@@ -81,7 +81,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_chunks_document_id"), "chunks", ["document_id"], unique=False)
 
     # Dense search: HNSW over cosine distance — the standard pairing for
-    # normalized text embeddings (OpenAI-style).
+    # normalized text embeddings (voyage-4-large).
     op.create_index(
         "ix_chunks_embedding_hnsw",
         "chunks",
