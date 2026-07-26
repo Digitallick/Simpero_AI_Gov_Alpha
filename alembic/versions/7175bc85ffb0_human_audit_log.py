@@ -48,9 +48,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["org_id"], ["organisation.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_human_audit_log_org_id"), "human_audit_log", ["org_id"], unique=False
-    )
+    op.create_index(op.f("ix_human_audit_log_org_id"), "human_audit_log", ["org_id"], unique=False)
     op.create_index(
         op.f("ix_human_audit_log_event_type"), "human_audit_log", ["event_type"], unique=False
     )

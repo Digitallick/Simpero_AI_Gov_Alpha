@@ -16,7 +16,7 @@ yet, so nothing appends here until that lands (same situation ai_audit_log
 was in before its LLM wrapper existed).
 
 Revision ID: e960a3366cf7
-Revises: 7b4b05b6d9c8
+Revises: 920070316626
 Create Date: 2026-07-25 00:00:00.000000
 
 """
@@ -30,7 +30,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "e960a3366cf7"
-down_revision: str | None = "7b4b05b6d9c8"
+down_revision: str | None = "920070316626"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
