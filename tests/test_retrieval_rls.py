@@ -15,6 +15,7 @@ DATABASE_URL, e.g. the local sandbox). It never touches a cloud database.
 from __future__ import annotations
 
 import os
+from typing import TypedDict
 
 import pytest
 from sqlalchemy import text
@@ -29,7 +30,19 @@ except ImportError:  # pragma: no cover
 
 ORG_A = "ret-test-org-a"
 ORG_B = "ret-test-org-b"
-QUERY = dict(query_text="total revenue company", query_embedding=[1.0, 0.0, 0.0, 0.0], top_k=10)
+
+
+class _Query(TypedDict):
+    query_text: str
+    query_embedding: list[float]
+    top_k: int
+
+
+QUERY: _Query = {
+    "query_text": "total revenue company",
+    "query_embedding": [1.0, 0.0, 0.0, 0.0],
+    "top_k": 10,
+}
 
 
 def _owner_dsn() -> str:
@@ -39,6 +52,7 @@ def _owner_dsn() -> str:
 
 
 def _owner_conn():
+    assert psycopg2 is not None  # guarded by the _db_available skip above
     conn = psycopg2.connect(_owner_dsn())
     conn.autocommit = True
     return conn
@@ -51,7 +65,8 @@ def _db_available() -> bool:
         conn = _owner_conn()
         cur = conn.cursor()
         cur.execute("SELECT count(*) FROM pg_extension WHERE extname = 'vector'")
-        ok = cur.fetchone()[0] == 1
+        row = cur.fetchone()
+        ok = row is not None and row[0] == 1
         conn.close()
         return ok
     except Exception:
@@ -110,7 +125,9 @@ def chunks_table():
                 " VALUES (%s, 'PE_FIRM', %s, now()) RETURNING id",
                 (key, key),
             )
-            org_ids[key] = cur.fetchone()[0]
+            inserted = cur.fetchone()
+            assert inserted is not None
+            org_ids[key] = inserted[0]
 
     def insert(org_id: int, doc: str, content: str, emb: str, page: int) -> None:
         cur.execute(

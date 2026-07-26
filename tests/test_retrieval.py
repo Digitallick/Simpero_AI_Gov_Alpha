@@ -7,9 +7,12 @@ needs the chunks table (SIM-237) and a Postgres, and is skipped without them.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.retrieval import (
     RRFWeights,
@@ -83,20 +86,21 @@ class RecordingSession:
     final id lookup."""
 
     def __init__(
-        self, dense_ids: list[int], sparse_ids: list[int], rows: dict[int, object]
+        self, dense_ids: list[int], sparse_ids: list[int], rows: Mapping[int, object]
     ) -> None:
         self.calls: list[tuple[str, dict]] = []
         self._dense = dense_ids
         self._sparse = sparse_ids
         self._rows = rows
 
-    async def execute(self, statement, params=None):  # noqa: ANN001
+    async def execute(self, statement, params: dict | None = None):  # noqa: ANN001
         sql = str(statement)
         self.calls.append((sql, dict(params or {})))
         if "<=>" in sql:
             return _Result([(i,) for i in self._dense])
         if "@@" in sql:
             return _Result([(i,) for i in self._sparse])
+        assert params is not None
         ids = params["ids"]
         return _Result([self._rows[i] for i in ids if i in self._rows])
 
@@ -113,13 +117,17 @@ def _row(chunk_id: int, document_id: str = "DOC") -> SimpleNamespace:
     )
 
 
+async def _run(session: RecordingSession, **kwargs):
+    """hybrid_search with the recording fake, which stands in for the
+    AsyncSession the production signature asks for."""
+    return await hybrid_search(cast(AsyncSession, session), **kwargs)
+
+
 async def test_hybrid_search_returns_fused_order_and_hydrates_rows() -> None:
     rows = {1: _row(1), 2: _row(2), 3: _row(3)}
     # 2 leads dense, 1 leads sparse; equal weights -> tie between 1 and 2, id-broken.
     session = RecordingSession(dense_ids=[2, 1, 3], sparse_ids=[1, 2], rows=rows)
-    hits = await hybrid_search(
-        session, query_text="revenue", query_embedding=[0.1, 0.2, 0.3], top_k=3
-    )
+    hits = await _run(session, query_text="revenue", query_embedding=[0.1, 0.2, 0.3], top_k=3)
     assert [h.chunk_id for h in hits] == [1, 2, 3]
     assert hits[0].content == "chunk 1"
     assert all(h.score > 0 for h in hits)
@@ -129,14 +137,14 @@ async def test_hybrid_search_weighting_flips_the_top_hit() -> None:
     rows = {10: _row(10), 20: _row(20)}
     session_dense = RecordingSession(dense_ids=[10, 20], sparse_ids=[20, 10], rows=rows)
     session_sparse = RecordingSession(dense_ids=[10, 20], sparse_ids=[20, 10], rows=rows)
-    dense_hits = await hybrid_search(
+    dense_hits = await _run(
         session_dense,
         query_text="q",
         query_embedding=[1.0],
         top_k=2,
         weights=RRFWeights(dense=1.0, sparse=0.1),
     )
-    sparse_hits = await hybrid_search(
+    sparse_hits = await _run(
         session_sparse,
         query_text="q",
         query_embedding=[1.0],
@@ -149,7 +157,7 @@ async def test_hybrid_search_weighting_flips_the_top_hit() -> None:
 
 async def test_dense_and_sparse_legs_have_the_right_operators() -> None:
     session = RecordingSession(dense_ids=[1], sparse_ids=[1], rows={1: _row(1)})
-    await hybrid_search(session, query_text="margin", query_embedding=[0.5, 0.5], top_k=1)
+    await _run(session, query_text="margin", query_embedding=[0.5, 0.5], top_k=1)
     dense_sql = next(sql for sql, _ in session.calls if "<=>" in sql)
     sparse_sql = next(sql for sql, _ in session.calls if "@@" in sql)
     assert "(:qvec)::vector" in dense_sql
@@ -159,7 +167,7 @@ async def test_dense_and_sparse_legs_have_the_right_operators() -> None:
 async def test_document_id_filters_both_legs_when_given_and_not_otherwise() -> None:
     rows = {1: _row(1, document_id="D1")}
     scoped = RecordingSession(dense_ids=[1], sparse_ids=[1], rows=rows)
-    await hybrid_search(scoped, query_text="q", query_embedding=[1.0], top_k=1, document_id="D1")
+    await _run(scoped, query_text="q", query_embedding=[1.0], top_k=1, document_id="D1")
     leg_calls = [(sql, p) for sql, p in scoped.calls if "<=>" in sql or "@@" in sql]
     assert leg_calls, "expected dense and sparse legs"
     for sql, params in leg_calls:
@@ -167,7 +175,7 @@ async def test_document_id_filters_both_legs_when_given_and_not_otherwise() -> N
         assert params["document_id"] == "D1"
 
     unscoped = RecordingSession(dense_ids=[1], sparse_ids=[1], rows=rows)
-    await hybrid_search(unscoped, query_text="q", query_embedding=[1.0], top_k=1)
+    await _run(unscoped, query_text="q", query_embedding=[1.0], top_k=1)
     for sql, params in [(sql, p) for sql, p in unscoped.calls if "<=>" in sql or "@@" in sql]:
         assert "document_id" not in sql
         assert "document_id" not in params
@@ -175,7 +183,7 @@ async def test_document_id_filters_both_legs_when_given_and_not_otherwise() -> N
 
 async def test_no_matches_returns_empty_without_hydrating() -> None:
     session = RecordingSession(dense_ids=[], sparse_ids=[], rows={})
-    hits = await hybrid_search(session, query_text="q", query_embedding=[1.0], top_k=5)
+    hits = await _run(session, query_text="q", query_embedding=[1.0], top_k=5)
     assert hits == []
     # only the two legs ran; no id-hydration round-trip on an empty fusion
     assert all("ANY(:ids)" not in sql for sql, _ in session.calls)
@@ -186,4 +194,4 @@ def test_empty_embedding_is_rejected() -> None:
 
     session = RecordingSession(dense_ids=[], sparse_ids=[], rows={})
     with pytest.raises(ValueError, match="empty"):
-        asyncio.run(hybrid_search(session, query_text="q", query_embedding=[], top_k=1))
+        asyncio.run(_run(session, query_text="q", query_embedding=[], top_k=1))
