@@ -23,7 +23,9 @@ from app.services.retrieval import (
 
 
 def test_a_chunk_in_both_legs_outscores_one_in_a_single_leg() -> None:
-    fused = reciprocal_rank_fusion({"dense": [1, 2, 3], "sparse": [2, 4]}, {"dense": 1.0, "sparse": 1.0})
+    fused = reciprocal_rank_fusion(
+        {"dense": [1, 2, 3], "sparse": [2, 4]}, {"dense": 1.0, "sparse": 1.0}
+    )
     assert fused[0][0] == 2  # the only chunk surfaced by both legs
 
 
@@ -37,7 +39,9 @@ def test_weighting_is_injectable_and_flips_the_winner() -> None:
 
 
 def test_zero_weight_drops_a_leg_entirely() -> None:
-    fused = reciprocal_rank_fusion({"dense": [1, 2], "sparse": [3, 4]}, {"dense": 1.0, "sparse": 0.0})
+    fused = reciprocal_rank_fusion(
+        {"dense": [1, 2], "sparse": [3, 4]}, {"dense": 1.0, "sparse": 0.0}
+    )
     assert {chunk_id for chunk_id, _ in fused} == {1, 2}
 
 
@@ -78,7 +82,9 @@ class RecordingSession:
     the `<=>` query, the sparse leg for the `@@` query, and hydrated rows for the
     final id lookup."""
 
-    def __init__(self, dense_ids: list[int], sparse_ids: list[int], rows: dict[int, object]) -> None:
+    def __init__(
+        self, dense_ids: list[int], sparse_ids: list[int], rows: dict[int, object]
+    ) -> None:
         self.calls: list[tuple[str, dict]] = []
         self._dense = dense_ids
         self._sparse = sparse_ids
@@ -97,8 +103,13 @@ class RecordingSession:
 
 def _row(chunk_id: int, document_id: str = "DOC") -> SimpleNamespace:
     return SimpleNamespace(
-        id=chunk_id, content=f"chunk {chunk_id}", document_id=document_id,
-        page=chunk_id, char_start=0, char_end=5, element_type="prose",
+        id=chunk_id,
+        content=f"chunk {chunk_id}",
+        document_id=document_id,
+        page=chunk_id,
+        char_start=0,
+        char_end=5,
+        element_type="prose",
     )
 
 
@@ -119,11 +130,17 @@ async def test_hybrid_search_weighting_flips_the_top_hit() -> None:
     session_dense = RecordingSession(dense_ids=[10, 20], sparse_ids=[20, 10], rows=rows)
     session_sparse = RecordingSession(dense_ids=[10, 20], sparse_ids=[20, 10], rows=rows)
     dense_hits = await hybrid_search(
-        session_dense, query_text="q", query_embedding=[1.0], top_k=2,
+        session_dense,
+        query_text="q",
+        query_embedding=[1.0],
+        top_k=2,
         weights=RRFWeights(dense=1.0, sparse=0.1),
     )
     sparse_hits = await hybrid_search(
-        session_sparse, query_text="q", query_embedding=[1.0], top_k=2,
+        session_sparse,
+        query_text="q",
+        query_embedding=[1.0],
+        top_k=2,
         weights=RRFWeights(dense=0.1, sparse=1.0),
     )
     assert dense_hits[0].chunk_id == 10

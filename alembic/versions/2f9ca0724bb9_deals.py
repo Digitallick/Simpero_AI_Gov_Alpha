@@ -34,9 +34,7 @@ def upgrade() -> None:
         sa.Column("deal_size_min_usd", sa.BigInteger(), nullable=True),
         sa.Column("deal_size_max_usd", sa.BigInteger(), nullable=True),
         sa.Column("sector_tags", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column(
-            "status", sa.Text(), server_default=DEFAULT_DEAL_STATUS, nullable=False
-        ),
+        sa.Column("status", sa.Text(), server_default=DEFAULT_DEAL_STATUS, nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

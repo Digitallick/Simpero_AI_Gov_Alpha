@@ -80,13 +80,30 @@ jobs:
   test:
     name: Test (pytest)
     runs-on: ubuntu-latest
-    # Placeholder settings so Settings() (built at import time in
-    # app.core.security) can construct in CI. The unit + contract tests do not
-    # open a DB or call Clerk, so dummy values are safe. DB-backed tests will
-    # need a `services: postgres` block + a matching DATABASE_URL.
+    # Real Postgres — tests exercise RLS policies and current_setting(), which
+    # SQLite can't do (see CLAUDE.md). pgvector/pgvector:pg16 matches the
+    # sandbox/dev image since a migration enables the pgvector extension.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: doadmin
+          POSTGRES_PASSWORD: ci_doadmin_pw
+          POSTGRES_DB: simpero
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U doadmin -d simpero"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    # ALEMBIC_DATABASE_URL runs migrations as doadmin (DDL). DATABASE_URL is
+    # dd_app (DML only, RLS-restricted) — created by the "Create dd_app role"
+    # step below, since GitHub's service containers start before checkout and
+    # can't mount sandbox/init/01-app-role.sql the way docker-compose.dev.yml does.
     env:
-      DATABASE_URL: "postgresql+asyncpg://ci:ci@localhost:5432/ci"
-      ALEMBIC_DATABASE_URL: "postgresql+psycopg2://ci:ci@localhost:5432/ci"
+      DATABASE_URL: "postgresql+asyncpg://dd_app:ci_dd_app_pw@localhost:5432/simpero"
+      ALEMBIC_DATABASE_URL: "postgresql+psycopg2://doadmin:ci_doadmin_pw@localhost:5432/simpero"
       CLERK_SECRET_KEY: "ci-dummy"
       CLERK_JWT_AUDIENCE: "ci-dummy"
       CLERK_JWKS_URL: "https://example.test/.well-known/jwks.json"
@@ -105,8 +122,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      # Remaining tests here don't open a DB (see comment above). If/when
-      # tests need Postgres, add a services: postgres block here.
+      # Migrations reference dd_app by name (bootstrap_dd_app_privliges.py,
+      # the RLS policy migrations) — mirrors sandbox/init/01-app-role.sql.
+      - name: Create dd_app role
+        env:
+          PGPASSWORD: ci_doadmin_pw
+        run: |
+          psql -h localhost -U doadmin -d simpero -c "CREATE ROLE dd_app WITH LOGIN PASSWORD 'ci_dd_app_pw'"
+          psql -h localhost -U doadmin -d simpero -c "GRANT CONNECT ON DATABASE simpero TO dd_app"
+
+      - name: Apply migrations
+        run: uv run alembic upgrade head
+
       - name: pytest
         run: uv run pytest -q --maxfail=1
 

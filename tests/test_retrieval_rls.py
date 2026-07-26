@@ -33,7 +33,9 @@ QUERY = dict(query_text="total revenue company", query_embedding=[1.0, 0.0, 0.0,
 
 
 def _owner_dsn() -> str:
-    return os.environ.get("ALEMBIC_DATABASE_URL", "").replace("+psycopg2", "").replace("+asyncpg", "")
+    return (
+        os.environ.get("ALEMBIC_DATABASE_URL", "").replace("+psycopg2", "").replace("+asyncpg", "")
+    )
 
 
 def _owner_conn():
@@ -57,7 +59,8 @@ def _db_available() -> bool:
 
 
 pytestmark = pytest.mark.skipif(
-    not _db_available(), reason="no pgvector Postgres reachable (set ALEMBIC_DATABASE_URL/DATABASE_URL)"
+    not _db_available(),
+    reason="no pgvector Postgres reachable (set ALEMBIC_DATABASE_URL/DATABASE_URL)",
 )
 
 
