@@ -30,8 +30,12 @@ on:
 # different droplets, no shared resource to protect. Not cancel-in-progress:
 # a half-applied Terraform run or a half-restarted compose stack should
 # finish, not be killed mid-way.
+#
+# Shared group name with destroy.yml (not github.workflow-based, which
+# would differ per file) — a deploy and a destroy against the same
+# environment can never run concurrently.
 concurrency:
-  group: deploy-${{ github.workflow }}-${{ inputs.environment }}
+  group: infra-${{ inputs.environment }}
 
 jobs:
   ci:
@@ -179,6 +183,15 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: ${{ inputs.environment }}
+    # packages: read — GITHUB_TOKEN needs this to authenticate the droplet's
+    # pull below. No GHCR_PAT secret, no bot account, no GitHub App: GHCR
+    # does NOT accept GitHub App installation tokens (a confirmed, current
+    # platform limitation — docker login "succeeds" but pull is denied), but
+    # it does accept the workflow's own GITHUB_TOKEN, same as docker-publish
+    # already uses to push. Minted fresh for this job, used immediately in
+    # the same SSH script below — well within its validity window.
+    permissions:
+      packages: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -239,7 +252,7 @@ jobs:
           script: |
             set -e
             cd /opt/simpero
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.prod.yml pull
             IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
             IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.prod.yml up -d
