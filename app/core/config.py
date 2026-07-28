@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     database_url: str
     alembic_database_url: str
     clerk_secret_key: str
-    clerk_jwt_audience: str
     clerk_jwks_url: str
     valkey_url: str
     voyage_api_key: str = ""

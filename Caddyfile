@@ -1,0 +1,9 @@
+# BACKEND_HOSTNAME comes from GitHub Environment secrets (api.simpero.com
+# for production, api-staging.simpero.com for staging), written into .env by
+# the `deploy` job on every run — never hardcoded here, since this one file
+# is shared by both droplets.
+# Caddy resolves {$VAR} at Caddyfile-parse time and auto-provisions Let's
+# Encrypt TLS for whatever hostname is configured.
+{$BACKEND_HOSTNAME} {
+	reverse_proxy app:8000
+}
