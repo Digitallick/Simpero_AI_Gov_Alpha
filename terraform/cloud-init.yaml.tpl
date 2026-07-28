@@ -14,7 +14,10 @@ users:
       - ${ssh_public_key}
 
 runcmd:
+  # runcmd runs as root, so /opt/simpero is created root-owned by default -
+  # the deploy user (via SCP in deploy.yml) needs write access to it.
   - mkdir -p /opt/simpero
+  - chown deploy:deploy /opt/simpero
 
 # Last: disable SSH password auth via cloud-init's native directive, not a
 # hand-rolled sshd_config sed.
