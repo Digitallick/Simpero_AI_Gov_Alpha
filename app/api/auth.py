@@ -22,6 +22,14 @@ async def me(
     so a valid token always finds exactly one row here."""
     user = await UserRepo(db).get_by_clerk_id(claims["user_id"])
     assert user is not None  # get_db JIT-provisions this row before the handler runs
+    await HumanAuditRepo(db).append(
+        {
+            "org_id": user.org_id,
+            "actor_id": claims["user_id"],
+            "actor_email": user.email,
+            "event_type": "auth_login",
+        }
+    )
     return user
 
 
