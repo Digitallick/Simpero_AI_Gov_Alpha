@@ -4,7 +4,9 @@ Everything the code needs is written (`.github/workflows/deploy.yml`, `terraform
 
 Do these roughly in order — later steps depend on earlier ones.
 
-**Status as of this writing: steps 1, 2, 3, 4, 6, 7, 8 done. Step 10 done for staging. Step 5 done for staging only — production's Postgres/Valkey clusters are deliberately deferred, not needed yet. Staging is fully ready for step 9 (first real run). Production is not — its `terraform-plan`/`apply` will fail until step 5's production cluster IDs are filled in, and step 10's production secrets can't be fully set until those clusters exist (production `DATABASE_URL`, `PGBOUNCER_DB_HOST`, etc. depend on them).**
+**Status as of this writing: STAGING IS FULLY LIVE.** `https://api-staging.simpero.com/api/health`, `/api/health/db`, and `/api/health/queue` all confirmed `200 ok`, 2026-07-28 — the full pipeline (CI → build/push → Terraform provisioning → deploy → DNS → Caddy's Let's Encrypt cert) has been verified working end to end. Steps 1–4, 6–11 are all done for staging.
+
+Production is not started — step 5's Postgres/Valkey clusters are deliberately deferred, and step 10's production secrets can't be fully set until those clusters exist. When you're ready for production, work through §5 onward below with `environment: production` instead of `staging` — the pipeline itself is proven working, so this should mostly be secrets/DNS bookkeeping rather than new debugging, though a first-time run of anything can still surface something new.
 
 ---
 
