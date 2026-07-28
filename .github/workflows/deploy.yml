@@ -49,7 +49,7 @@ jobs:
       packages: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
@@ -102,7 +102,7 @@ jobs:
       TF_VAR_ssh_public_key: ${{ secrets.TF_VAR_ssh_public_key }}
       TF_VAR_environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
@@ -140,7 +140,7 @@ jobs:
       TF_VAR_ssh_public_key: ${{ secrets.TF_VAR_ssh_public_key }}
       TF_VAR_environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
@@ -193,7 +193,7 @@ jobs:
     permissions:
       packages: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
