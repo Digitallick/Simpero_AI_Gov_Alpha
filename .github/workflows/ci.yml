@@ -4,8 +4,6 @@ name: CI
 on:
   pull_request:
     branches: [main, staging]
-  push:
-    branches: [staging]
 
 # Cancel superseded runs on the same PR/branch to save minutes.
 concurrency:
