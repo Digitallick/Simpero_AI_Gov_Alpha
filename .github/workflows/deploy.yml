@@ -30,8 +30,12 @@ on:
 # different droplets, no shared resource to protect. Not cancel-in-progress:
 # a half-applied Terraform run or a half-restarted compose stack should
 # finish, not be killed mid-way.
+#
+# Shared group name with destroy.yml (not github.workflow-based, which
+# would differ per file) — a deploy and a destroy against the same
+# environment can never run concurrently.
 concurrency:
-  group: deploy-${{ github.workflow }}-${{ inputs.environment }}
+  group: infra-${{ inputs.environment }}
 
 jobs:
   ci:
