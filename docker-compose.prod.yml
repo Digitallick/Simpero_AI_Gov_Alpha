@@ -54,7 +54,7 @@ services:
     # Owner is hardcoded (lowercase — GHCR rejects uppercase) rather than an
     # env var: it's the repo owner, a static non-secret value, same as the
     # image name the deploy.yml workflow builds/pushes.
-    image: ghcr.io/digitallick/simpero-ai-gov-alpha:${IMAGE_TAG:-latest}
+    image: ghcr.io/simpero-ai/simpero-ai-gov-alpha:${IMAGE_TAG:-latest}
     env_file:
       - .env
     depends_on:
@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ghcr.io/digitallick/simpero-ai-gov-alpha:${IMAGE_TAG:-latest}
+    image: ghcr.io/simpero-ai/simpero-ai-gov-alpha:${IMAGE_TAG:-latest}
     command: ["saq", "app.jobs.worker.settings"]
     env_file:
       - .env
