@@ -1,0 +1,92 @@
+version: "3.9"
+
+# Standalone prod compose file (not an overlay on the root docker-compose.yml).
+# No local Postgres/Valkey — the app connects to DigitalOcean managed clusters
+# for both, same as the root dev file. DATABASE_URL, ALEMBIC_DATABASE_URL, and
+# VALKEY_URL are provided via .env on the droplet, generated fresh by the
+# `deploy` job's "Write .env from GitHub secrets" step on every deploy — see
+# docs/plans/do-droplet-deployment.md §1 (2026-07-28 revision).
+#
+# Only Caddy publishes host ports (80/443) — pgbouncer/app/worker are
+# reachable only on the internal simpero-network, matching the plan's
+# "App/PgBouncer no longer publish host ports in prod" decision.
+
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DD_APP_PASSWORD: "${DD_APP_PASSWORD}"
+    # Only docker-compose.prod.yml, Caddyfile, and .env live on the droplet
+    # (no repo checkout — see docs/plans/do-droplet-deployment.md §1), so
+    # pgbouncer.ini can't be a mounted file here the way the root dev compose
+    # does it. Written inline instead, content matching docker/pgbouncer.ini.
+    # Same userlist.txt bypass as the root docker-compose.yml: the edoburu
+    # image's entrypoint MD5-hashes DB_PASSWORD, which breaks SCRAM-SHA-256
+    # backend auth on DigitalOcean, so we write it plaintext ourselves.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cat > /etc/pgbouncer/pgbouncer.ini <<EOF
+        [databases]
+        * = host=$$PGBOUNCER_DB_HOST port=$$PGBOUNCER_DB_PORT dbname=$$PGBOUNCER_DB_NAME
+
+        [pgbouncer]
+        listen_port = 5432
+        listen_addr = 0.0.0.0
+        auth_type = md5
+        auth_file = /etc/pgbouncer/userlist.txt
+        pool_mode = transaction
+        max_client_conn = 22
+        default_pool_size = 20
+        server_reset_query =
+        server_tls_sslmode = require
+        log_connections = 1
+        log_disconnections = 1
+        EOF
+        printf '"dd_app" "%s"\n' "$$DD_APP_PASSWORD" > /etc/pgbouncer/userlist.txt
+        exec /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  app:
+    # Owner is hardcoded (lowercase — GHCR rejects uppercase) rather than an
+    # env var: it's the repo owner, a static non-secret value, same as the
+    # image name the deploy.yml workflow builds/pushes.
+    image: ghcr.io/digitallick/simpero-ai-gov-alpha:${IMAGE_TAG:-latest}
+    env_file:
+      - .env
+    depends_on:
+      - pgbouncer
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/digitallick/simpero-ai-gov-alpha:${IMAGE_TAG:-latest}
+    command: ["saq", "app.jobs.worker.settings"]
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    env_file:
+      - .env
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  default:
+    name: simpero-network

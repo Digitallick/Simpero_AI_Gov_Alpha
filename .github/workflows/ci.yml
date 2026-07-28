@@ -3,9 +3,9 @@ name: CI
 # Runs on every PR into main, and on pushes to main (post-merge safety net).
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
   push:
-    branches: [main]
+    branches: [main, staging]
 
 # Cancel superseded runs on the same PR/branch to save minutes.
 concurrency:
@@ -105,7 +105,6 @@ jobs:
       DATABASE_URL: "postgresql+asyncpg://dd_app:ci_dd_app_pw@localhost:5432/simpero"
       ALEMBIC_DATABASE_URL: "postgresql+psycopg2://doadmin:ci_doadmin_pw@localhost:5432/simpero"
       CLERK_SECRET_KEY: "ci-dummy"
-      CLERK_JWT_AUDIENCE: "ci-dummy"
       CLERK_JWKS_URL: "https://example.test/.well-known/jwks.json"
       VALKEY_URL: "redis://localhost:6379/0"
     steps:
@@ -149,7 +148,6 @@ jobs:
       DATABASE_URL: "postgresql+asyncpg://ci:ci@localhost:5432/ci"
       ALEMBIC_DATABASE_URL: "postgresql+psycopg2://ci:ci@localhost:5432/ci"
       CLERK_SECRET_KEY: "ci-dummy"
-      CLERK_JWT_AUDIENCE: "ci-dummy"
       CLERK_JWKS_URL: "https://example.test/.well-known/jwks.json"
       VALKEY_URL: "redis://localhost:6379/0"
     steps:
@@ -173,6 +171,23 @@ jobs:
       # Build the wheel (hatchling) — confirms packaging is intact.
       - name: Build wheel
         run: uv build
+
+      # Actually build the deploy image — the wheel build above and the
+      # import-smoke above it do NOT exercise Dockerfile, and deploy.yml's
+      # docker-publish job builds this same Dockerfile for real. Catches
+      # missing COPY paths (e.g. alembic.ini/alembic/, needed for
+      # `docker compose run --rm app alembic upgrade head` in production)
+      # before they reach a real deploy instead of after.
+      - name: Build Docker image
+        run: docker build -t ci-image-smoke .
+
+      # Confirm the image actually contains what `alembic upgrade head`
+      # needs at deploy time — a real regression check, not just "did it
+      # build". Fails loudly if the Dockerfile's alembic COPY lines regress.
+      - name: Verify image has alembic config + migrations
+        run: |
+          docker run --rm ci-image-smoke test -f /app/alembic.ini
+          docker run --rm ci-image-smoke test -d /app/alembic/versions
 
   # ---------------------------------------------------------------------------
   # 5. DEPENDENCY / VULNERABILITY CHECK — pip-audit over the resolved env.
