@@ -32,6 +32,12 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy application source.
 COPY app/ /app/app/
 
+# alembic.ini (script_location = alembic, prepend_sys_path = .) and the
+# migration scripts themselves — needed for `alembic upgrade head` to run
+# inside this image (see deploy/docker-compose.prod.yml's migration step).
+COPY alembic.ini ./
+COPY alembic/ /app/alembic/
+
 # Activate the virtualenv.
 ENV PATH="/app/.venv/bin:$PATH"
 

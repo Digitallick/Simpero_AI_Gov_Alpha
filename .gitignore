@@ -14,7 +14,6 @@ docker/userlist.txt
 .claude
 .env
 docker/ca-certificate.crt
-docs/plans
 docs_personal/
 
 # Local test PDFs — may contain confidential client documents (CIMs, financials).
@@ -28,3 +27,10 @@ tests/diagnose_ds1_instrumented.py
 ,claude
 .claude-flow
 sandbox/cim/*
+
+# Terraform (terraform/) — local provider cache and downloaded plan
+# artifacts; state itself lives remotely in DO Spaces (see versions.tf).
+# .terraform.lock.hcl IS committed for reproducible provider versions.
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/tfplan
