@@ -72,9 +72,8 @@ The naive design — one GitHub Environment per deployment target (`staging`, `p
 
 **Repo-level secrets** (not Environment-scoped — genuinely identical regardless of target environment):
 - `TF_VAR_do_token` — one DO account, one token.
-- `GHCR_PAT` — same PAT pulls the same image regardless of destination droplet.
 
-**Dropped entirely as a secret:** `DROPLET_SSH_USER` — it's the literal `deploy` in both environments, not sensitive; hardcode it in the workflow instead of keeping a non-secret value in sync across 4 places.
+**Dropped entirely as a secret:** `DROPLET_SSH_USER` — it's the literal `deploy` in both environments, not sensitive; hardcode it in the workflow instead of keeping a non-secret value in sync across 4 places. **Also `GHCR_PAT`** (2026-07-28 revision): originally a classic PAT (bot account vs. personal account considered), then a GitHub App — but GHCR does not accept GitHub App installation tokens, a confirmed, current platform limitation (`docker login` succeeds, `docker pull` is denied). Replaced with the workflow's own built-in `GITHUB_TOKEN` (`permissions: packages: read` added to the `deploy` job) — GHCR does accept this, and `docker-publish` already proves the pattern works for the push side. No bot account, no App, no extra secret to create or rotate, ever.
 
 **Two separate approval prompts per environment, per run** (confirmed in the original single-environment design and unchanged in principle): `terraform-apply` and `deploy` referencing the same Environment (`staging` or `production`) produces two distinct pauses, since GitHub evaluates Environment protection per job, not deduplicated per Environment per run.
 
@@ -136,7 +135,8 @@ terraform/
 | Secret | Holds |
 |---|---|
 | `TF_VAR_do_token` | DO API token |
-| `GHCR_PAT` | Classic PAT, `read:packages` only |
+
+(No GHCR credential secret — the `deploy` job's built-in `GITHUB_TOKEN`, scoped via `permissions: packages: read`, authenticates the droplet's pull. See §1.)
 
 **Environment-scoped secrets** — see §1's table for the full 4-Environment breakdown (`staging-plan`, `production-plan` ungated; `staging`, `production` gated with Vansh as required reviewer).
 
@@ -170,7 +170,7 @@ job deploy (needs: [docker-publish, terraform-apply]; environment: { name: '${{ 
       && (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped')
   scp docker-compose.prod.yml + Caddyfile → /opt/simpero/  (that environment's droplet, via DROPLET_HOST)
   ssh (user: literal "deploy", not a secret):
-    docker login ghcr.io (GHCR_PAT)
+    docker login ghcr.io (GITHUB_TOKEN, via `packages: read` on this job — no GHCR_PAT)
     IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.prod.yml pull
     IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
     IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.prod.yml up -d

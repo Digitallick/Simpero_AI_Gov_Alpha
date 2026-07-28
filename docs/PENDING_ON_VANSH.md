@@ -137,7 +137,8 @@ GitHub → **Settings → Secrets and variables → Actions → New repository s
 | Secret | Value |
 |---|---|
 | `TF_VAR_do_token` | A DigitalOcean API token (Settings → API → Generate New Token, write scope) — one token, works for both environments |
-| `GHCR_PAT` | A classic GitHub PAT with `read:packages` scope only (github.com/settings/tokens) |
+
+**`GHCR_PAT` is no longer needed — remove it if you already created it.** (2026-07-28: originally a classic PAT, then a GitHub App was considered — but GHCR doesn't accept GitHub App installation tokens, a confirmed platform limitation. Replaced with the workflow's own built-in `GITHUB_TOKEN`, already available with no setup, no bot account, no separate credential to create or rotate.)
 
 ### Environment-scoped secrets
 For **each** of the 4 Environments created in step 7, go to that Environment's page → **Environment secrets → Add secret**. Note: `TF_VAR_ssh_public_key` and the two Spaces credentials need to be set in **both** the `-plan` Environment and its matching gated Environment (e.g. both `staging-plan` and `staging`) — this duplication is unavoidable, GitHub doesn't support one Environment inheriting another's secrets.
@@ -218,7 +219,7 @@ Once all secrets for an environment are set, go back to the pending Actions run 
 2. At whichever provider actually hosts `simpero.com`'s DNS (not DigitalOcean, per earlier discussion), add an A record:
    - `api-staging.simpero.com` → staging droplet's IP
    - `api.simpero.com` → production droplet's IP
-3. Give DNS a few minutes to propagate, then re-run the `deploy` job (or just re-dispatch the workflow with `run_terraform` unchecked) — the health-check step at the end (`curl` against `/health`, `/health/db`, `/health/queue`) should now succeed, since Caddy can finally get a valid TLS cert for the real hostname.
+3. Give DNS a few minutes to propagate, then re-run the `deploy` job (or just re-dispatch the workflow with `run_terraform` unchecked) — the health-check step at the end (`curl` against `/api/health`, `/api/health/db`, `/api/health/queue`) should now succeed, since Caddy can finally get a valid TLS cert for the real hostname.
 
 ---
 
