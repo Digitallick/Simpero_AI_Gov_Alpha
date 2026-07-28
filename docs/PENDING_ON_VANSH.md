@@ -94,6 +94,14 @@ curl -s -X GET "https://api.digitalocean.com/v2/databases/bc62dad7-0e89-4323-b53
 
 ---
 
+## 5b. ~~Confirm DigitalOcean Project names~~ — Done
+
+Each environment's droplet is now assigned into an existing DO Project (shared with the frontend and services repos), via `terraform/main.tf`'s `digitalocean_project_resources`. Not created by this repo's Terraform — just looked up by name, so the name in `terraform/staging.tfvars`/`production.tfvars` (`do_project_name`) must exactly match what's actually in the DO console. You've set these directly already: staging → `"Simpero"`, production → `"Simpero-Prod"`.
+
+Only the droplet itself lands in the project — DO Projects don't support Firewalls or SSH keys at all (confirmed against DO's own API spec), so `digitalocean_firewall.app`/`digitalocean_ssh_key.deploy` stay account-wide regardless.
+
+---
+
 ## 6. ~~Generate two deploy SSH keypairs (one per environment)~~ — Done
 
 Staging and production each need their **own** keypair — reusing one keypair across both environments' Terraform state risks DigitalOcean deduplicating the key and one environment's `apply` silently failing or colliding with the other's.

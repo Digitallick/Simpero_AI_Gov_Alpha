@@ -39,3 +39,8 @@ variable "valkey_cluster_id" {
   description = "ID of the existing DO managed Valkey cluster (from `doctl databases list`). No default — must be supplied explicitly."
   type        = string
 }
+
+variable "do_project_name" {
+  description = "Name of the existing DigitalOcean Project this environment's droplet is assigned into (shared with the frontend and services repos — not created by this repo's Terraform). No default — must be supplied explicitly."
+  type        = string
+}

@@ -232,3 +232,12 @@ A `workflow_dispatch`-only workflow, `.github/workflows/destroy.yml`, added afte
 - **No new secrets or Environments** — reuses everything `deploy.yml` already has.
 - **Shared `concurrency:` group with `deploy.yml`** (`infra-${{ inputs.environment }}`, not `github.workflow`-keyed, which would differ per file) — a deploy and a destroy against the same environment can never race each other, on top of Terraform's own `use_lockfile` state locking.
 - **Known gap, not automated**: after a destroy, that environment's `DROPLET_HOST` secret and DNS record point at a droplet that no longer exists. Nothing in this pipeline holds the broad repo-admin credentials needed to auto-clear a GitHub secret (deliberately — same narrow-credential posture as everywhere else in this setup), so this is a manual follow-up after the next successful recreate.
+
+## 9. DigitalOcean Projects — assign each environment's droplet (2026-07-29)
+
+Each environment's droplet is assigned into a pre-existing DO Project (`terraform/main.tf`: `data "digitalocean_project"` lookup by name + `digitalocean_project_resources` resource), shared across the frontend, backend (this repo), and services repos — each assigns its own resources into the same project, same sharing pattern as the Spaces state buckets.
+
+- **Not created by this repo's Terraform** — looked up by name via a data source, same reasoning as the shared Spaces buckets: avoids ownership conflicts if another repo's Terraform also touches the same project.
+- **Only the droplet is assignable, confirmed against DO's own OpenAPI spec.** DO Projects support exactly 9 resource types: App Platform App, Database, Domain, Droplet, Floating IP, Kubernetes Cluster, Load Balancer, Space, Volume. **Neither Firewalls nor SSH keys are on that list** — `digitalocean_firewall.app` and `digitalocean_ssh_key.deploy` simply cannot be assigned to a project at all, regardless of intent; they stay account-wide. Not a limitation of this implementation — a hard constraint of the DO API itself.
+- **New required variable**: `do_project_name`, per-environment `.tfvars` (`staging.tfvars`: `"staging"`, `production.tfvars`: `"prod"`) — must exactly match the DO Project's actual name (case-sensitive), which Vansh creates/confirms directly in the DO console. No default, same posture as `postgres_cluster_id`/`valkey_cluster_id`.
+- Uses the droplet resource's own computed `urn` attribute (`digitalocean_droplet.app.urn`) rather than constructing the `do:droplet:<id>` URN string by hand — avoids drift if DO ever changes the URN format.

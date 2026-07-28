@@ -10,3 +10,7 @@ droplet_size = "s-2vcpu-2gb"
 # `doctl databases list` before the first real apply.
 postgres_cluster_id = "REPLACE_ME"
 valkey_cluster_id   = "REPLACE_ME"
+
+# Must exactly match the DigitalOcean Project name (case-sensitive) —
+# confirm this against whatever you actually named it in the DO console.
+do_project_name = "Simpero-Prod"
