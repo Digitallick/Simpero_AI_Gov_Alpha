@@ -1,9 +1,13 @@
 name: CI
 
-# Runs on every PR into main, and on pushes to main (post-merge safety net).
+# Runs on every PR into main or staging, and reused by deploy.yml's `ci` job.
 on:
   pull_request:
     branches: [main, staging]
+  workflow_call:
+    # Lets deploy.yml's `ci` job (uses: ./.github/workflows/ci.yml) reuse
+    # these jobs instead of duplicating them — required, not optional:
+    # GitHub rejects a `uses:`-called workflow that lacks this trigger.
 
 # Cancel superseded runs on the same PR/branch to save minutes.
 concurrency:
