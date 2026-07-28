@@ -8,3 +8,7 @@ droplet_size = "s-1vcpu-1gb"
 # Staging Postgres/Valkey cluster IDs (via DO API — see docs/PENDING_ON_VANSH.md §5).
 postgres_cluster_id = "dc41daf7-3ccd-43c6-8409-9ef6b8b647e2"
 valkey_cluster_id   = "bc62dad7-0e89-4323-b53b-2099b5a2fc29"
+
+# Must exactly match the DigitalOcean Project name (case-sensitive) —
+# confirm this against whatever you actually named it in the DO console.
+do_project_name = "Simpero-Staging"

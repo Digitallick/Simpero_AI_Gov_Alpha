@@ -61,10 +61,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # GHCR rejects uppercase image names. github.repository_owner for this
-      # repo is "Digitallick" (capital D) — must be lowercased explicitly,
-      # not just interpolated. Must match the hardcoded lowercase owner in
-      # docker-compose.prod.yml.
+      # GHCR rejects uppercase image names. github.repository_owner may have
+      # mixed case (e.g. "Simpero-AI") - must be lowercased explicitly, not
+      # just interpolated. Must match the hardcoded lowercase owner in
+      # docker-compose.prod.yml (kept static there rather than dynamic,
+      # since a real repo-owner change - e.g. an org transfer - needs a
+      # deliberate look at both places anyway, not a silent auto-follow).
       - name: Compute lowercase image name
         id: image
         run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/simpero-ai-gov-alpha" >> "$GITHUB_OUTPUT"
@@ -257,18 +259,29 @@ jobs:
             IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
             IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.prod.yml up -d
 
-      # From the runner, not over SSH (per plan). Plain HTTP against Caddy on
-      # port 80, following redirects: the app/pgbouncer services deliberately
-      # publish no host port in prod (only Caddy does), so this is the only
-      # externally reachable path. Before this droplet's .env has
-      # BACKEND_HOSTNAME set and DNS points at the droplet (plan §5 items
-      # 9-10), Caddy has no valid site/cert to serve and this step is
-      # *expected* to fail even though the deploy itself succeeded — not a
-      # bug in this workflow, a known first-run ordering gap in the plan.
-      # health.router is mounted under API_PREFIX ("/api") in app/main.py —
+      # From the runner, not over SSH (per plan). Caddy only serves a site
+      # block for BACKEND_HOSTNAME (see Caddyfile) - it matches purely on
+      # the Host header / TLS SNI, so a plain request to the bare
+      # DROPLET_HOST IP gets a 404 from Caddy regardless of DNS, since the
+      # Host header would be the IP itself, not the configured hostname.
+      # --resolve pins BACKEND_HOSTNAME to DROPLET_HOST for this one curl
+      # call, forcing the correct Host header AND TLS SNI without needing
+      # real DNS to resolve at this point - so this genuinely exercises the
+      # right code path (Caddy's actual site block) rather than something
+      # structurally guaranteed to fail. It still needs DNS to have been
+      # live at some point before this, though: Caddy can only have a valid
+      # cert to present if Let's Encrypt's own validation request (made
+      # over the real internet, unaffected by --resolve here) already
+      # succeeded - so this step still fails until DNS + a first successful
+      # cert issuance have happened at least once (plan §5 items 9-10),
+      # just for the right reason now (TLS/cert error, not a 404).
+      # health.router is mounted under API_PREFIX ("/api") in app/main.py -
       # not at the bare paths. Every route in this app lives under /api/*.
       - name: Health check
         run: |
           for path in /api/health /api/health/db /api/health/queue; do
-            curl --fail -L --retry 5 --retry-delay 5 "http://${{ secrets.DROPLET_HOST }}${path}"
+            curl --fail -L --retry 5 --retry-delay 5 \
+              --resolve "${{ secrets.BACKEND_HOSTNAME }}:443:${{ secrets.DROPLET_HOST }}" \
+              --resolve "${{ secrets.BACKEND_HOSTNAME }}:80:${{ secrets.DROPLET_HOST }}" \
+              "https://${{ secrets.BACKEND_HOSTNAME }}${path}"
           done

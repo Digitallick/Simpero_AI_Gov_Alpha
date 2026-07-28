@@ -51,8 +51,11 @@ jobs:
     steps:
       # Fails loudly (red job, clear error) rather than silently skipping —
       # a skipped-and-easy-to-miss job is the wrong failure mode for a typo
-      # on something this destructive.
+      # on something this destructive. working-directory override: this
+      # runs before checkout, so the job-level `defaults.run.working-
+      # directory: terraform` doesn't exist on disk yet.
       - name: Confirm typed environment matches selection
+        working-directory: .
         run: |
           if [ "${{ inputs.confirm_environment }}" != "${{ inputs.environment }}" ]; then
             echo "::error::Typed confirmation '${{ inputs.confirm_environment }}' does not match selected environment '${{ inputs.environment }}'. Aborting before touching any infrastructure or state."

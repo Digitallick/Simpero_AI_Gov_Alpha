@@ -93,3 +93,21 @@ resource "digitalocean_database_firewall" "valkey" {
     value = digitalocean_droplet.app.id
   }
 }
+
+# Assigns this environment's droplet into a pre-existing DO Project (shared
+# with the frontend and services repos, each assigning their own resources —
+# not created or owned by this repo's Terraform, same pattern as the shared
+# Spaces state buckets). Only the droplet: DO Projects support a fixed set of
+# resource types (App Platform App, Database, Domain, Droplet, Floating IP,
+# Kubernetes Cluster, Load Balancer, Space, Volume) — confirmed against DO's
+# own OpenAPI spec — and neither Firewalls nor SSH keys are on that list, so
+# digitalocean_firewall.app and digitalocean_ssh_key.deploy simply can't be
+# assigned to a project at all; they stay account-wide regardless.
+data "digitalocean_project" "target" {
+  name = var.do_project_name
+}
+
+resource "digitalocean_project_resources" "app" {
+  project   = data.digitalocean_project.target.id
+  resources = [digitalocean_droplet.app.urn]
+}
