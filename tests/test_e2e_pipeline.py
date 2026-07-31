@@ -3,12 +3,14 @@
 The first check that runs the WHOLE ingest->retrieve seam against a real
 pgvector Postgres and ASSERTS the result, instead of testing each half alone.
 It ingests one document's claims AND chunks (the parser's real emitted output,
-validated against contracts/{claims,chunks}.schema.json) under one tenant, then
+validated against contracts/{claims,chunks}.schema.json) under TWO tenants, then
 runs hybrid_search and asserts the wiring the recon found fragile:
 
   1. claims and chunks land TOGETHER under the right tenant;
   2. a query built from a known claim retrieves the chunk carrying its text;
-  3. a tenant that never scoped itself sees nothing (fail-closed RLS).
+  3. two tenants holding IDENTICAL content stay isolated (RLS keeps them apart,
+     not the content);
+  4. an unscoped session (no app.org_id) sees nothing (fail-closed).
 
 Sparse-only: chunks are ingested with a NULL embedding (no Voyage key), so the
 dense leg (WHERE embedding IS NOT NULL) matches nothing and RRF degrades to the
@@ -141,18 +143,28 @@ async def _search_as(org_key: str, query_text: str):
         )
 
 
+async def _search_unscoped(query_text: str):
+    async with AsyncSessionLocal() as session, session.begin():
+        return await hybrid_search(
+            session, query_text=query_text, query_embedding=SPARSE_ONLY_QVEC, top_k=10
+        )
+
+
 @pytest.fixture
 async def ingested():
     claims = _load("claims")["claims"]
     chunks = _load("chunks")["chunks"]
-    _delete_org(ORG)
-    _delete_org(OTHER_ORG)
+    # Two tenants hold IDENTICAL content, so only RLS -- not content -- can keep
+    # them apart (see test_two_tenants... below). Clean both before and after.
+    for org in (ORG, OTHER_ORG):
+        _delete_org(org)
     await _ingest(ORG, claims, chunks)
+    await _ingest(OTHER_ORG, claims, chunks)
     try:
         yield {"claims": claims, "chunks": chunks}
     finally:
-        _delete_org(ORG)
-        _delete_org(OTHER_ORG)
+        for org in (ORG, OTHER_ORG):
+            _delete_org(org)
 
 
 @requires_db
@@ -178,8 +190,23 @@ async def test_a_query_from_a_known_claim_retrieves_its_chunk(ingested) -> None:
 
 
 @requires_db
-async def test_a_tenant_that_never_scoped_itself_sees_nothing(ingested) -> None:
-    hits = await _search_as(OTHER_ORG, "revenue")
+async def test_two_tenants_holding_the_same_content_stay_isolated(ingested) -> None:
+    # Both tenants hold the SAME ingested content, so a leak cannot hide behind
+    # different text: each must retrieve its OWN chunk rows and never the other's.
+    a = await _search_as(ORG, "revenue")
+    b = await _search_as(OTHER_ORG, "revenue")
+    assert a and b, "each tenant should retrieve its own copy of the revenue chunk"
+    a_ids = {h.chunk_id for h in a}
+    b_ids = {h.chunk_id for h in b}
+    assert not (a_ids & b_ids), "a tenant retrieved another tenant's chunk rows -- RLS leak"
+
+
+@requires_db
+async def test_an_unscoped_session_sees_nothing(ingested) -> None:
+    # No set_config -> app.org_id is NULL -> the policy matches no org -> zero
+    # rows. The fail-closed property that makes a pooled connection safe: a
+    # transaction that forgot to scope sees nothing, not everything.
+    hits = await _search_unscoped("revenue")
     assert hits == []
 
 
