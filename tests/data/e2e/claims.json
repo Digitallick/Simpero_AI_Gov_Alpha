@@ -1,0 +1,31 @@
+{
+  "run_id": "l1-e2e",
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_file": "l1-synthetic.pdf",
+  "claims": [
+    {
+      "entity": "TestCo",
+      "attribute": "revenue",
+      "period_year": 2024,
+      "period_kind": "A",
+      "value": {
+        "raw": "$15,295",
+        "normalized": 15295000,
+        "unit": "USD",
+        "scale_multiplier": 1000,
+        "scale_source": "page_header",
+        "value_type": "currency"
+      },
+      "location": {
+        "kind": "pdf",
+        "file": "l1-synthetic.pdf",
+        "page": 1,
+        "char_start": 12,
+        "char_end": 19
+      },
+      "status": "proposed",
+      "verification_method": null,
+      "flags": []
+    }
+  ]
+}
