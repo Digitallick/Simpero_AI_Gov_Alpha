@@ -284,9 +284,7 @@ def test_happy_path_returns_presigned_response_with_matching_key_shape(
 
     # No DB write in this handler.
     with owner_conn.cursor() as cur:
-        cur.execute(
-            "SELECT count(*) FROM data_source WHERE deal_id = %s", (seeded_deal,)
-        )
+        cur.execute("SELECT count(*) FROM data_source WHERE deal_id = %s", (seeded_deal,))
         assert cur.fetchone()[0] == 0
 
 
@@ -372,9 +370,7 @@ def test_complete_without_prior_put_returns_4xx_no_row_no_audit_no_job(
     _authed(app, seeded_org["clerk_org_id"], "user-1")
     upload_id = str(uuid.uuid4())
 
-    resp = client.post(
-        f"/uploads/{upload_id}/complete", json=_complete_body(seeded_deal)
-    )
+    resp = client.post(f"/uploads/{upload_id}/complete", json=_complete_body(seeded_deal))
 
     assert 400 <= resp.status_code < 500
     assert _count_data_source(owner_conn, seeded_deal) == 0
@@ -388,9 +384,7 @@ def test_complete_happy_path_creates_row_enqueues_one_job_writes_one_audit_row(
     _authed(app, seeded_org["clerk_org_id"], "user-1")
     upload_id = str(uuid.uuid4())
 
-    resp = client.post(
-        f"/uploads/{upload_id}/complete", json=_complete_body(seeded_deal)
-    )
+    resp = client.post(f"/uploads/{upload_id}/complete", json=_complete_body(seeded_deal))
 
     assert resp.status_code == 200
     body = resp.json()
@@ -398,9 +392,7 @@ def test_complete_happy_path_creates_row_enqueues_one_job_writes_one_audit_row(
 
     # Exactly one data_source row, status='pending'.
     with owner_conn.cursor() as cur:
-        cur.execute(
-            "SELECT status, storage_key FROM data_source WHERE id = %s", (upload_id,)
-        )
+        cur.execute("SELECT status, storage_key FROM data_source WHERE id = %s", (upload_id,))
         row = cur.fetchone()
         assert row is not None
         assert row[0] == "pending"
@@ -434,9 +426,7 @@ async def test_complete_row_invisible_to_other_org_via_rls(
     _authed(app, seeded_org["clerk_org_id"], "user-1")
     upload_id = str(uuid.uuid4())
 
-    resp = client.post(
-        f"/uploads/{upload_id}/complete", json=_complete_body(seeded_deal)
-    )
+    resp = client.post(f"/uploads/{upload_id}/complete", json=_complete_body(seeded_deal))
     assert resp.status_code == 200
 
     result = await db_session.execute(

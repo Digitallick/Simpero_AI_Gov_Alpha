@@ -57,9 +57,7 @@ def test_build_object_key_shape():
 
 def test_build_object_key_sanitizes_org_name():
     # Slashes, colons, spaces -- anything outside [A-Za-z0-9._-] -- become "_".
-    key = spaces.build_object_key(
-        "Acme/Corp: Q4 Fund", "org_abc123", DEAL_ID, UPLOAD_ID, "f.pdf"
-    )
+    key = spaces.build_object_key("Acme/Corp: Q4 Fund", "org_abc123", DEAL_ID, UPLOAD_ID, "f.pdf")
     org_part = key.split("-org_abc123")[0]
     assert org_part == "Acme_Corp__Q4_Fund"
 
