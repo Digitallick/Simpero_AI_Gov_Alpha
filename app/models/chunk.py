@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
 
 from app.core.database import Base
+from app.models.data_source import DataSource
 from app.models.organisation import Organisation
 
 # Embedding dimension is 1024, voyage-4-large's default Matryoshka size (it also
@@ -23,8 +24,9 @@ class Chunk(Base):
     (content_tsv) lookups; not itself a claim — claims.chunk_id points back
     here once claim emission is wired to it (out of scope for this table).
 
-    No FK on document_id: the documents/data_sources table doesn't exist yet,
-    same forward-reference situation as claims.data_source_id/chunk_id.
+    document_id -> data_source.id, added once data_source existed (see that
+    table's migration and the follow-up migration adding this FK). Table has
+    no populated rows yet, so no backfill was needed.
     """
 
     __tablename__ = "chunks"
@@ -39,7 +41,7 @@ class Chunk(Base):
         Integer, ForeignKey(Organisation.id), nullable=False, index=True
     )
     document_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True
+        UUID(as_uuid=True), ForeignKey(DataSource.id), nullable=True, index=True
     )
 
     content: Mapped[str] = mapped_column(Text, nullable=False)

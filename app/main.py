@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import admin, auth, deals, health, history, investment_profile, logs
+from app.api import admin, auth, deals, health, history, investment_profile, logs, uploads
 from app.core.config import get_settings
 from app.core.exceptions import (
     AuthenticationError,
@@ -55,6 +55,7 @@ app.include_router(history.router, prefix=API_PREFIX)
 app.include_router(investment_profile.router, prefix=API_PREFIX)
 app.include_router(logs.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
+app.include_router(uploads.router, prefix=API_PREFIX)
 
 # Do not open DB connections at startup. PgBouncer transaction pooling requires sessions to be
 # opened per-transaction, not per-application-lifecycle. A startup DB connection would hold a
