@@ -137,9 +137,12 @@ async def test_orm_insert_of_a_chunk_generates_content_tsv(db_session, org_a_id)
     SQLAlchemy emits it in the INSERT and Postgres raises GeneratedAlwaysError. This
     guards the ORM ingest path (scripts/ingest_chunks.py); the raw-SQL tests above
     never exercised it."""
+    # document_id left None (nullable): a random uuid.uuid4() would now violate
+    # the FK added on chunks.document_id -> data_source.id (Phase 7,
+    # migration 77be2ddc60a0) since it isn't a real data_source row; this
+    # test's own concern is content_tsv generation, not that FK.
     chunk = Chunk(
         org_id=org_a_id,
-        document_id=uuid.uuid4(),
         content="Total gaming revenue grew strongly",
         element_type="prose",
         page=1,

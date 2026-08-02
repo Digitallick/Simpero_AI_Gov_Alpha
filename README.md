@@ -63,6 +63,23 @@ Each authenticated request issues `SET LOCAL app.org_id = '<org_id>'` as the fir
 
 `UPDATE` and `DELETE` on `audit_log` are revoked from `dd_app` at the DB level. App code does not enforce this.
 
+### Document upload (presigned URLs)
+
+Uploads go straight from the client to DigitalOcean Spaces, never through this
+app's request/response cycle:
+
+1. `POST /api/uploads/presigned-url` — declared type/size guard, dedupe check,
+   returns a presigned `PUT` URL (10 min TTL). No DB write yet.
+2. Client `PUT`s the file bytes directly to Spaces.
+3. `POST /api/uploads/{upload_id}/complete` — confirms the object exists,
+   creates the `data_source` row (`status='pending'`), and enqueues an async
+   job that streams the object back to verify its hash.
+
+Reuses the `PARSER_SPACES_*` vars already in `.env` directly (same bucket,
+same credentials, decided by Vansh) rather than a second `SPACES_*` set —
+see `.env.example` and `app/core/config.py`. No separate provisioning step
+needed.
+
 ### Document parsing lives in a separate repo
 
 Docling-based PDF/XLSX/DOCX parsing moved out of this repo into its own

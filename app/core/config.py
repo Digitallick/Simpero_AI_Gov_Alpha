@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,18 @@ class Settings(BaseSettings):
     # sync for this many seconds, covering the window before a caller's
     # already-issued session JWT refreshes to reflect the new org_role.
     admin_role_sync_grace_seconds: int = 120
+    # Document-upload Spaces settings. Reuses the parser service's PARSER_SPACES_*
+    # env vars directly (same bucket/credentials, decided by Vansh) rather than
+    # duplicating identical values under a second name — no ParserSettings class
+    # exists in this app (parsing moved to Simpero_Gov_AI_Services), so there's
+    # nothing to actually import; aliasing the env var is the whole story.
+    spaces_bucket: str = Field(default="", validation_alias="PARSER_SPACES_BUCKET")
+    spaces_region: str = Field(default="", validation_alias="PARSER_SPACES_REGION")
+    spaces_endpoint_url: str = Field(default="", validation_alias="PARSER_SPACES_ENDPOINT_URL")
+    spaces_access_key_id: str = Field(default="", validation_alias="PARSER_SPACES_ACCESS_KEY_ID")
+    spaces_secret_access_key: str = Field(
+        default="", validation_alias="PARSER_SPACES_SECRET_ACCESS_KEY"
+    )
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
 
 from app.core.database import Base
+from app.models.data_source import DataSource
 from app.models.organisation import Organisation
 
 # The shape of a claim is defined by contracts/claims.schema.json, NOT here.
@@ -90,16 +91,28 @@ class Claim(Base):
         Integer, ForeignKey(Organisation.id), nullable=False, index=True
     )
 
-    # No FKs yet: deals, sessions, data_sources and chunks do not exist. Typed
-    # UUID on the expectation that new tables follow audit_log's intended UUID
-    # pattern rather than organisation's serial Integer. The contract requires
-    # none of them (only entity/attribute/value/status/location), so they stay
-    # nullable until there is something to point at.
+    # deal_id: still a bare UUID, not yet a FK -- `claims` predates `deals` in
+    # the migration chain (claims_spine came before deals), so this column
+    # was a true forward reference when authored. `deals` now precedes the
+    # current head, so it's structurally addable, but only pending a
+    # one-time orphaned-row check against the real DB (see the data_source
+    # FK follow-up migration's docstring) -- not done here.
+    # session_id/chunk_id: sessions/chunks tables exist, but no FK added yet
+    # (out of scope for this pass). Typed UUID on the expectation that new
+    # tables follow audit_log's intended UUID pattern rather than
+    # organisation's serial Integer. The contract requires none of them (only
+    # entity/attribute/value/status/location), so they stay nullable until
+    # there is something to point at.
     deal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     session_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
-    data_source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # data_source_id -> data_source.id. Column name stays data_source_id per
+    # contracts/claims.schema.json (cross-repo contract on name/shape only;
+    # a DB-level FK doesn't touch that contract).
+    data_source_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey(DataSource.id), nullable=True
+    )
     chunk_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     entity: Mapped[str] = mapped_column(Text, nullable=False)
