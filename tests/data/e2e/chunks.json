@@ -1,0 +1,34 @@
+{
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_file": "l1-synthetic.pdf",
+  "chunks": [
+    {
+      "content": "Revenue was $15,295 thousand in fiscal 2024, driven by strong demand.",
+      "element_type": "prose",
+      "page": 1,
+      "order": 0,
+      "document_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_file": "l1-synthetic.pdf",
+      "scale_context": null,
+      "scale_multiplier": null,
+      "spans": [[0, 68]],
+      "bbox": null,
+      "section": "Financial Summary",
+      "flags": []
+    },
+    {
+      "content": "The company operates three business segments across two regions.",
+      "element_type": "prose",
+      "page": 1,
+      "order": 1,
+      "document_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_file": "l1-synthetic.pdf",
+      "scale_context": null,
+      "scale_multiplier": null,
+      "spans": [[0, 63]],
+      "bbox": null,
+      "section": "Overview",
+      "flags": []
+    }
+  ]
+}
