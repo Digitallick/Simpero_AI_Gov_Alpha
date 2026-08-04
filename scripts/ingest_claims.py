@@ -55,6 +55,11 @@ def _row_from_claim(claim: dict, org_id: int, session_id: uuid.UUID) -> Claim:
         session_id=session_id,
         entity=claim["entity"],
         attribute=claim["attribute"],
+        # SIM-365/364: carry the parser's stable id and assertion type across the seam.
+        # claim_type is contract-required; default to "unknown" defensively for any
+        # pre-field payload rather than failing the row.
+        claim_ref=claim.get("claim_ref"),
+        claim_type=claim.get("claim_type", "unknown"),
         value=claim["value"],
         # The parse service's emit.py cannot carry a period yet, but the
         # contract and this table both have the columns, so anything upstream
