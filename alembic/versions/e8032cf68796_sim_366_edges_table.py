@@ -35,9 +35,11 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        # SIM-366: all four locked edge types now, even though alpha ingest writes
-        # only same_fact/contradicts -- adding one later is an ALTER on a live RLS
-        # table; derived_from lands with the consistency pass (3b).
+        # SIM-366: all four locked edge types now. Only same_fact/contradicts are
+        # produced or consumed today; derived_from/supersedes are reserved, schema-
+        # only -- the CHECK accepts them, nothing writes or reads one yet. Listed
+        # ahead of use because adding a value later is an ALTER on a live RLS table;
+        # derived_from lands with the consistency pass (3b).
         sa.CheckConstraint(
             "type IN ('same_fact', 'derived_from', 'contradicts', 'supersedes')",
             name="ck_edges_type",

@@ -10,10 +10,15 @@ from app.core.database import Base
 from app.models.organisation import Organisation
 
 # SIM-366: the parser's within-page claim relationships (the E1 reducer's output),
-# persisted instead of dropped. All FOUR locked edge types are in the CHECK now,
-# even though alpha ingest writes only same_fact/contradicts -- adding one later is
-# an ALTER TABLE DROP/ADD CONSTRAINT on a live RLS table, whereas listing all four
-# costs one string; derived_from lands with the consistency pass (3b).
+# persisted instead of dropped.
+#
+# Only same_fact and contradicts are produced (by the reducer) or consumed (by
+# verification) TODAY. derived_from and supersedes are RESERVED, schema-only: the
+# CHECK accepts them, but nothing writes or reads one yet -- do not assume they are
+# live just because the column allows them. They sit in the CHECK ahead of use only
+# because adding a value later is an ALTER TABLE DROP/ADD CONSTRAINT on a live RLS
+# table while listing all four costs one string. derived_from goes live with the
+# consistency pass (3b); both land under the SIM-56 epic, not here.
 _EDGE_TYPES = ("same_fact", "derived_from", "contradicts", "supersedes")
 
 

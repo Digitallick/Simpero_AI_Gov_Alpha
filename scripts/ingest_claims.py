@@ -14,6 +14,12 @@ SAFETY, by construction:
   nothing.
 - --org-key names a demo tenant; the demo organisation row is created in the
   same transaction, so it too vanishes on rollback.
+- NOT idempotent -- insert-only. Re-running with --commit on a document that was
+  already ingested INSERTS a second copy of its claims AND edges; it does not
+  replace them. The ordered teardown that makes re-ingest safe (delete edges ->
+  upsert claims -> re-insert edges) is SIM-367, and lands with the shared
+  production-ingest core. Until then: ingest a document once, or clear its rows
+  first. RESTRICT on the edge FKs is what will force that teardown's ordering.
 
     uv run python scripts/ingest_claims.py claims.json --org-key demo_e2e_ptl
     uv run python scripts/ingest_claims.py claims.json --org-key demo_e2e_ptl --commit
@@ -27,6 +33,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 
@@ -35,6 +42,8 @@ from sqlalchemy import func, select, text
 from app.core.database import AsyncSessionLocal
 from app.models import Claim, Edge, Organisation
 from app.models.organisation import OrgType
+
+logger = logging.getLogger(__name__)
 
 _CONTRACT = Path(__file__).parent.parent / "contracts" / "claims.schema.json"
 
@@ -141,8 +150,9 @@ async def _run(payload: dict, org_key: str, commit: bool, session_id: uuid.UUID)
         # the claim just ingested; an unresolved from/to is a missing endpoint -- skip
         # that one edge and record it (fail-closed but non-blocking) rather than
         # failing the document or dropping it silently. (Idempotent delete-then-
-        # reinsert teardown is the shared production-ingest core's job -- see SIM-366;
-        # the demo path just inserts, the same as it does for claims.)
+        # reinsert teardown is SIM-367, part of the shared production-ingest core;
+        # this demo path is insert-only, the same as it is for claims -- see the
+        # module docstring.)
         ref_to_id = {r.claim_ref: r.id for r in rows if r.claim_ref is not None}
         # An edge is advisory, so a bad one is skipped and recorded, never fatal to
         # the document the way a bad claim is. Validate each edge against the
@@ -184,8 +194,12 @@ async def _run(payload: dict, org_key: str, commit: bool, session_id: uuid.UUID)
         session.add_all(edge_rows)
         await session.flush()
         print(f"{len(edge_rows)} edge(s) inserted, {len(skipped)} skipped.")
+        # A skipped edge is dropped on purpose, but the drop must not be console-only:
+        # log it structured (keyed on the run's session_id + tenant) so it stays
+        # queryable after the fact, not just visible in this one terminal. `detail`
+        # already carries the edge's identity (type + from/to claim_ref) and reason.
         for detail in skipped:
-            print(f"  edge skipped: {detail}")
+            logger.warning("edge skipped: session=%s org=%s %s", session_id, org_key, detail)
 
         # Read back as dd_app under this tenant: the app's own view.
         seen = await session.scalar(select(func.count()).select_from(Claim))

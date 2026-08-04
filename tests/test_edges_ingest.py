@@ -161,3 +161,39 @@ async def test_resolvable_edges_land_bad_ones_skip_and_rls_isolates_two_orgs() -
     finally:
         for org in (ORG, OTHER):
             _delete_org(org)
+
+
+@requires_db
+async def test_a_claim_with_a_live_edge_cannot_be_deleted_until_the_edge_is_gone() -> None:
+    """The locked ON DELETE RESTRICT (deliberately not cascade): a claim an edge
+    points at cannot be deleted while the edge stands. This is the constraint that
+    forces re-ingest's ordered teardown -- drop edges, THEN claims (SIM-367)."""
+    _delete_org(ORG)
+    try:
+        payload = {
+            "claims": [_claim(A, 10, 17, 100), _claim(B, 400, 410, 120)],
+            "edges": [{"type": "contradicts", "from": A, "to": B, "basis": "disagree"}],
+        }
+        await _run(payload, ORG, commit=True, session_id=uuid.uuid4())
+        _, ref_id = await _edges_and_claim_refs(ORG)
+        from_id = ref_id[A]
+
+        assert psycopg2 is not None
+        conn = psycopg2.connect(_owner_dsn())
+        try:
+            cur = conn.cursor()
+            # Deleting the referenced claim while its edge stands is rejected:
+            # SQLSTATE 23503 foreign_key_violation -- RESTRICT did its job.
+            with pytest.raises(psycopg2.Error) as exc_info:
+                cur.execute("DELETE FROM claims WHERE id = %s", (str(from_id),))
+            assert exc_info.value.pgcode == "23503"
+            conn.rollback()
+            # And the ordered teardown succeeds: drop the edge first, then the claim
+            # deletes cleanly -- exactly the order RESTRICT compels.
+            cur.execute("DELETE FROM edges WHERE from_claim_id = %s", (str(from_id),))
+            cur.execute("DELETE FROM claims WHERE id = %s", (str(from_id),))
+            conn.commit()
+        finally:
+            conn.close()
+    finally:
+        _delete_org(ORG)
