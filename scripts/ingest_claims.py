@@ -144,9 +144,24 @@ async def _run(payload: dict, org_key: str, commit: bool, session_id: uuid.UUID)
         # reinsert teardown is the shared production-ingest core's job -- see SIM-366;
         # the demo path just inserts, the same as it does for claims.)
         ref_to_id = {r.claim_ref: r.id for r in rows if r.claim_ref is not None}
+        # An edge is advisory, so a bad one is skipped and recorded, never fatal to
+        # the document the way a bad claim is. Validate each edge against the
+        # contract's edge schema FIRST: that is what catches a malformed edge (a
+        # missing key) or a `type` outside the contract enum -- both of which
+        # cross-repo contract drift can produce -- before it reaches a hard e[...]
+        # read (KeyError) or a raw insert the CHECK rejects (IntegrityError), either
+        # of which would roll back every claim already flushed above.
+        from jsonschema import Draft202012Validator
+
+        edge_validator = Draft202012Validator(json.loads(_CONTRACT.read_text())["$defs"]["edge"])
         edge_rows: list[Edge] = []
         skipped: list[str] = []
-        for e in payload.get("edges", []):
+        for i, e in enumerate(payload.get("edges", [])):
+            errors = sorted(edge_validator.iter_errors(e), key=str)
+            if errors:
+                skipped.append(f"edge {i} violates the contract: {errors[0].message}")
+                continue
+            # Required-and-typed by the contract now, so these reads cannot raise.
             from_id = ref_to_id.get(e["from"])
             to_id = ref_to_id.get(e["to"])
             if from_id is None or to_id is None:
@@ -168,7 +183,7 @@ async def _run(payload: dict, org_key: str, commit: bool, session_id: uuid.UUID)
             )
         session.add_all(edge_rows)
         await session.flush()
-        print(f"{len(edge_rows)} edge(s) inserted, {len(skipped)} skipped (missing endpoint).")
+        print(f"{len(edge_rows)} edge(s) inserted, {len(skipped)} skipped.")
         for detail in skipped:
             print(f"  edge skipped: {detail}")
 
