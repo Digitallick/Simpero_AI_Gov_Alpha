@@ -33,7 +33,7 @@ from pathlib import Path
 from sqlalchemy import func, select, text
 
 from app.core.database import AsyncSessionLocal
-from app.models import Claim, Organisation
+from app.models import Claim, Edge, Organisation
 from app.models.organisation import OrgType
 
 _CONTRACT = Path(__file__).parent.parent / "contracts" / "claims.schema.json"
@@ -133,8 +133,44 @@ async def _run(payload: dict, org_key: str, commit: bool, session_id: uuid.UUID)
             await session.flush()  # assigns org.id
         org_id = org.id
 
-        session.add_all(_row_from_claim(c, org_id, session_id) for c in claims)
+        rows = [_row_from_claim(c, org_id, session_id) for c in claims]
+        session.add_all(rows)
         await session.flush()
+
+        # SIM-366: persist the reducer's edges. Resolve each endpoint's claim_ref to
+        # the claim just ingested; an unresolved from/to is a missing endpoint -- skip
+        # that one edge and record it (fail-closed but non-blocking) rather than
+        # failing the document or dropping it silently. (Idempotent delete-then-
+        # reinsert teardown is the shared production-ingest core's job -- see SIM-366;
+        # the demo path just inserts, the same as it does for claims.)
+        ref_to_id = {r.claim_ref: r.id for r in rows if r.claim_ref is not None}
+        edge_rows: list[Edge] = []
+        skipped: list[str] = []
+        for e in payload.get("edges", []):
+            from_id = ref_to_id.get(e["from"])
+            to_id = ref_to_id.get(e["to"])
+            if from_id is None or to_id is None:
+                missing = ", ".join(
+                    label for label, got in (("from", from_id), ("to", to_id)) if got is None
+                )
+                skipped.append(
+                    f"{e['type']} {e['from']!r}->{e['to']!r} (missing endpoint: {missing})"
+                )
+                continue
+            edge_rows.append(
+                Edge(
+                    org_id=org_id,
+                    from_claim_id=from_id,
+                    to_claim_id=to_id,
+                    type=e["type"],
+                    basis=e["basis"],
+                )
+            )
+        session.add_all(edge_rows)
+        await session.flush()
+        print(f"{len(edge_rows)} edge(s) inserted, {len(skipped)} skipped (missing endpoint).")
+        for detail in skipped:
+            print(f"  edge skipped: {detail}")
 
         # Read back as dd_app under this tenant: the app's own view.
         seen = await session.scalar(select(func.count()).select_from(Claim))
