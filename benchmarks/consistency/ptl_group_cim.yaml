@@ -1,0 +1,301 @@
+# SIM-373: 3b consistency benchmark -- one CIM's hand-annotated arithmetic
+# relationships (design doc Step 3b: "both the production consistency pass
+# and the cross-claim benchmark").
+#
+# STATUS: DRAFT. Every relationship below needs human review before this
+# file is trusted as a scoring reference for SIM-372's consistency pass.
+# It was hand-extracted and hand-computed by an AI session from the ONE
+# real CIM committed to this repo (no CIM-02/CIM-03, as the ticket
+# originally assumed, exist here) -- treat every `expected` verdict as a
+# proposal, not a verified ground truth, until someone with domain
+# knowledge of PTL Group's actual financials has checked it against the
+# Data Room, not just this Memorandum's rounded presentation.
+#
+# SOURCE: tests/test_data/1st-App-H-PTL-Group-CIM.pdf (BDO Canada Limited,
+# Receiver's CIM for PTL Holdings Limited et al., May 2018).
+#
+# COVERAGE: all 22 relationships below are hand-extracted from ONE table --
+# the Income Statement on page 11 (CAD, in thousands) -- plus two narrative
+# percentage callouts on page 10. This is the only page in the source PDF
+# with a real, fully-numeric financial table whose text a plain PDF text
+# extraction (pypdf) can read cleanly. The balance sheet (pages 12-13) and
+# the revenue-by-product-and-service breakdown (page 12) are charts/graphics
+# in the source PDF with no extractable numeric text -- see
+# relationship_types_not_covered below rather than inventing numbers that
+# aren't actually readable in the document.
+#
+# ENGINE COVERAGE TODAY: app/services/consistency.py's DEFAULT_RULES (SIM-372)
+# implements exactly 2 of the rule SHAPES below --
+# gross_margin_from_revenue_and_cogs and ebitda_from_gross_margin_and_opex
+# (see tests/test_consistency.py's test_ptl_group_cim_2018f_holds_against_the
+# _real_income_statement for a passing end-to-end check against this same
+# document). The ratio rules (gross_margin_pct, ebitda_margin_pct) and the
+# period-over-period growth rules are NOT yet in DEFAULT_RULES -- this file
+# is deliberately ahead of the engine, per the ticket's own framing of E as
+# the labeled data D needs to prove itself against, not a report of what D
+# already passes.
+#
+# FORMAT NOTES for whoever wires this into the eval harness (SIM-351):
+#   - `period` uses year+kind where the source states one (2018F etc, kind=P
+#     for "projected"/forecast); the "Trailing 5 Year Average" column is NOT
+#     representable as one period_year/period_kind pair (it's a multi-year
+#     average) -- period_label carries it instead. This is a known gap
+#     between this annotation format and the app's Claim.period_year/
+#     period_kind columns, not an oversight to silently paper over.
+#   - `expected: holds` means the formula reconstructs within a normal
+#     rounding tolerance of the stated figure (see each note for the exact
+#     delta). `expected: uncertain` means the printed figures don't
+#     reconcile cleanly and the underlying unrounded source values would be
+#     needed to know whether it's a real discrepancy or compounded rounding
+#     -- deliberately NOT forced into holds/conflicts.
+
+annotation_format_version: 1
+status: DRAFT
+source_document: tests/test_data/1st-App-H-PTL-Group-CIM.pdf
+source_table: "Income Statement, CAD (in Thousands) -- p.11"
+relationship_types_not_covered:
+  - name: segments_sum_to_total
+    reason: >
+      "2018F - Revenue by Product/Service" chart (p.12) has category labels
+      (Site services & labour support, Construction & Project Support
+      Services, Garage Sales, Equipment Rental, Other) but no extractable
+      numeric values in this PDF's text layer -- it renders as a chart, not
+      a text table.
+  - name: balance_sheet_relationships
+    reason: >
+      "Projected financial results - Balance Sheet" (pp.12-13) is likewise
+      not text-extractable as a table; only narrative bullets survive (a
+      $0.7M tax recovery, an $0.8M redundant-equipment sale), not a
+      reconcilable balance sheet total to check pre/post relationships
+      against.
+
+relationships:
+  # --- Gross Margin = Revenue - COGS (4 periods, all exact) ---------------
+  - id: r01
+    rule: gross_margin_from_revenue_and_cogs
+    period: {year: null, kind: null, period_label: "Trailing 5 Year Average"}
+    operands:
+      - {attribute: revenueUsd, value: 15295}
+      - {attribute: cogsUsd, value: 11124}
+    derived: {attribute: grossMarginUsd, value: 4171}
+    expected: holds
+    note: "15295 - 11124 = 4171, exact"
+  - id: r02
+    rule: gross_margin_from_revenue_and_cogs
+    period: {year: 2018, kind: P, period_label: "2018F"}
+    operands:
+      - {attribute: revenueUsd, value: 17146}
+      - {attribute: cogsUsd, value: 13515}
+    derived: {attribute: grossMarginUsd, value: 3631}
+    expected: holds
+    note: "17146 - 13515 = 3631, exact"
+  - id: r03
+    rule: gross_margin_from_revenue_and_cogs
+    period: {year: 2019, kind: P, period_label: "2019F"}
+    operands:
+      - {attribute: revenueUsd, value: 18003}
+      - {attribute: cogsUsd, value: 14186}
+    derived: {attribute: grossMarginUsd, value: 3817}
+    expected: holds
+    note: "18003 - 14186 = 3817, exact"
+  - id: r04
+    rule: gross_margin_from_revenue_and_cogs
+    period: {year: 2020, kind: P, period_label: "2020F"}
+    operands:
+      - {attribute: revenueUsd, value: 18903}
+      - {attribute: cogsUsd, value: 14896}
+    derived: {attribute: grossMarginUsd, value: 4007}
+    expected: holds
+    note: "18903 - 14896 = 4007, exact"
+
+  # --- Gross Margin % = Gross Margin / Revenue (4 periods) -----------------
+  - id: r05
+    rule: gross_margin_pct_from_gross_margin_and_revenue
+    period: {year: null, kind: null, period_label: "Trailing 5 Year Average"}
+    operands:
+      - {attribute: grossMarginUsd, value: 4171}
+      - {attribute: revenueUsd, value: 15295}
+    derived: {attribute: grossMarginPct, value: 0.273}
+    expected: holds
+    note: "4171 / 15295 = 27.27%, rounds to stated 27.3%"
+  - id: r06
+    rule: gross_margin_pct_from_gross_margin_and_revenue
+    period: {year: 2018, kind: P, period_label: "2018F"}
+    operands:
+      - {attribute: grossMarginUsd, value: 3631}
+      - {attribute: revenueUsd, value: 17146}
+    derived: {attribute: grossMarginPct, value: 0.212}
+    expected: holds
+    note: "3631 / 17146 = 21.17%, rounds to stated 21.2%"
+  - id: r07
+    rule: gross_margin_pct_from_gross_margin_and_revenue
+    period: {year: 2019, kind: P, period_label: "2019F"}
+    operands:
+      - {attribute: grossMarginUsd, value: 3817}
+      - {attribute: revenueUsd, value: 18003}
+    derived: {attribute: grossMarginPct, value: 0.212}
+    expected: holds
+    note: "3817 / 18003 = 21.20%, matches stated 21.2%"
+  - id: r08
+    rule: gross_margin_pct_from_gross_margin_and_revenue
+    period: {year: 2020, kind: P, period_label: "2020F"}
+    operands:
+      - {attribute: grossMarginUsd, value: 4007}
+      - {attribute: revenueUsd, value: 18903}
+    derived: {attribute: grossMarginPct, value: 0.212}
+    expected: holds
+    note: "4007 / 18903 = 21.20%, matches stated 21.2%"
+
+  # --- Normalized EBITDA = Gross Margin - Operating costs (4 periods) -----
+  - id: r09
+    rule: ebitda_from_gross_margin_and_opex
+    period: {year: null, kind: null, period_label: "Trailing 5 Year Average"}
+    operands:
+      - {attribute: grossMarginUsd, value: 4171}
+      - {attribute: operatingCostsUsd, value: 2118}
+    derived: {attribute: ebitdaUsd, value: 2052}
+    expected: holds
+    note: >
+      4171 - 2118 = 2053, but the table states $2,052 -- a $1K (0.05%)
+      rounding gap, well inside any sane tolerance. Likely the underlying
+      unrounded component figures don't round-trip through the printed
+      thousands exactly; immaterial either way.
+  - id: r10
+    rule: ebitda_from_gross_margin_and_opex
+    period: {year: 2018, kind: P, period_label: "2018F"}
+    operands:
+      - {attribute: grossMarginUsd, value: 3631}
+      - {attribute: operatingCostsUsd, value: 1672}
+    derived: {attribute: ebitdaUsd, value: 1959}
+    expected: holds
+    note: "3631 - 1672 = 1959, exact"
+  - id: r11
+    rule: ebitda_from_gross_margin_and_opex
+    period: {year: 2019, kind: P, period_label: "2019F"}
+    operands:
+      - {attribute: grossMarginUsd, value: 3817}
+      - {attribute: operatingCostsUsd, value: 1723}
+    derived: {attribute: ebitdaUsd, value: 2094}
+    expected: holds
+    note: "3817 - 1723 = 2094, exact"
+  - id: r12
+    rule: ebitda_from_gross_margin_and_opex
+    period: {year: 2020, kind: P, period_label: "2020F"}
+    operands:
+      - {attribute: grossMarginUsd, value: 4007}
+      - {attribute: operatingCostsUsd, value: 1774}
+    derived: {attribute: ebitdaUsd, value: 2233}
+    expected: holds
+    note: "4007 - 1774 = 2233, exact"
+
+  # --- EBITDA Margin % = EBITDA / Revenue (4 periods) ----------------------
+  - id: r13
+    rule: ebitda_margin_pct_from_ebitda_and_revenue
+    period: {year: null, kind: null, period_label: "Trailing 5 Year Average"}
+    operands:
+      - {attribute: ebitdaUsd, value: 2052}
+      - {attribute: revenueUsd, value: 15295}
+    derived: {attribute: ebitdaMarginPct, value: 0.134}
+    expected: holds
+    note: "2052 / 15295 = 13.42%, rounds to stated 13.4%"
+  - id: r14
+    rule: ebitda_margin_pct_from_ebitda_and_revenue
+    period: {year: 2018, kind: P, period_label: "2018F"}
+    operands:
+      - {attribute: ebitdaUsd, value: 1959}
+      - {attribute: revenueUsd, value: 17146}
+    derived: {attribute: ebitdaMarginPct, value: 0.114}
+    expected: holds
+    note: "1959 / 17146 = 11.42%, rounds to stated 11.4%"
+  - id: r15
+    rule: ebitda_margin_pct_from_ebitda_and_revenue
+    period: {year: 2019, kind: P, period_label: "2019F"}
+    operands:
+      - {attribute: ebitdaUsd, value: 2094}
+      - {attribute: revenueUsd, value: 18003}
+    derived: {attribute: ebitdaMarginPct, value: 0.116}
+    expected: holds
+    note: "2094 / 18003 = 11.63%, rounds to stated 11.6%"
+  - id: r16
+    rule: ebitda_margin_pct_from_ebitda_and_revenue
+    period: {year: 2020, kind: P, period_label: "2020F"}
+    operands:
+      - {attribute: ebitdaUsd, value: 2233}
+      - {attribute: revenueUsd, value: 18903}
+    derived: {attribute: ebitdaMarginPct, value: 0.118}
+    expected: holds
+    note: "2233 / 18903 = 11.81%, rounds to stated 11.8%"
+
+  # --- Period-over-period growth, cited as explicit assumptions (p.12) ----
+  - id: r17
+    rule: revenue_growth_matches_stated_assumption
+    period: {year: 2019, kind: P, period_label: "2019F vs 2018F"}
+    operands:
+      - {attribute: revenueUsd, value: 17146, period_label: "2018F"}
+      - {attribute: revenueUsd, value: 18003, period_label: "2019F"}
+    derived: {attribute: revenueGrowthPct, value: 0.05}
+    expected: holds
+    note: >
+      18003 / 17146 - 1 = 4.998%, matches the text's stated assumption
+      ("Revenue in 2019 and 2020 assumes 5% growth over prior year levels").
+  - id: r18
+    rule: revenue_growth_matches_stated_assumption
+    period: {year: 2020, kind: P, period_label: "2020F vs 2019F"}
+    operands:
+      - {attribute: revenueUsd, value: 18003, period_label: "2019F"}
+      - {attribute: revenueUsd, value: 18903, period_label: "2020F"}
+    derived: {attribute: revenueGrowthPct, value: 0.05}
+    expected: holds
+    note: "18903 / 18003 - 1 = 4.999%, matches the stated 5% assumption."
+  - id: r19
+    rule: opex_growth_matches_stated_assumption
+    period: {year: 2019, kind: P, period_label: "2019F vs 2018F"}
+    operands:
+      - {attribute: operatingCostsUsd, value: 1672, period_label: "2018F"}
+      - {attribute: operatingCostsUsd, value: 1723, period_label: "2019F"}
+    derived: {attribute: opexGrowthPct, value: 0.03}
+    expected: holds
+    note: >
+      1723 / 1672 - 1 = 3.05%, close to the text's stated "3% increases
+      over prior year levels" -- 0.05pp off, consistent with rounding the
+      underlying figures to the nearest $1K before printing.
+  - id: r20
+    rule: opex_growth_matches_stated_assumption
+    period: {year: 2020, kind: P, period_label: "2020F vs 2019F"}
+    operands:
+      - {attribute: operatingCostsUsd, value: 1723, period_label: "2019F"}
+      - {attribute: operatingCostsUsd, value: 1774, period_label: "2020F"}
+    derived: {attribute: opexGrowthPct, value: 0.03}
+    expected: holds
+    note: "1774 / 1723 - 1 = 2.96%, close to the stated 3% (rounding)."
+
+  # --- Narrative callouts (p.10), secured-contract coverage ----------------
+  - id: r21
+    rule: secured_revenue_pct_of_2018_budget
+    period: {year: 2018, kind: P, period_label: "2018F"}
+    operands:
+      - {attribute: securedRevenueUsd, value: 8900, unit_note: "stated as $8.9 million"}
+      - {attribute: revenueUsd, value: 17146}
+    derived: {attribute: securedRevenuePct, value: 0.52}
+    expected: holds
+    note: >
+      8900 / 17146 = 51.9%, rounds to the stated "52%" ("The Companies
+      began 2018 with $8.9 million (52%) of its fiscal revenue budget
+      secured by firm contracts").
+  - id: r22
+    rule: secured_gross_margin_pct
+    period: {year: 2018, kind: P, period_label: "2018F secured contracts"}
+    operands:
+      - {attribute: securedGrossMarginUsd, value: 2000, unit_note: "stated as $2.0 million"}
+      - {attribute: securedRevenueUsd, value: 8900, unit_note: "stated as $8.9 million"}
+    derived: {attribute: securedGrossMarginPct, value: 0.222}
+    expected: uncertain
+    note: >
+      2000 / 8900 = 22.47%, vs the text's stated "22.2%" -- a 0.27pp gap
+      ("Fiscal 2018 secured contracts are forecast to produce gross margins
+      of 22.2% or $2.0 million"). Both $8.9M and $2.0M are themselves
+      rounded to one decimal in the source text; the true unrounded
+      operands aren't recoverable from this Memorandum alone, so this
+      could be exact-and-consistent against the real underlying figures or
+      a genuine minor discrepancy. Do NOT treat as a confirmed conflict
+      without checking the Data Room's unrounded model.
