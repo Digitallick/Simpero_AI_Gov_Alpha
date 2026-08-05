@@ -292,6 +292,54 @@ async def test_rerun_is_idempotent_via_the_unique_constraint() -> None:
 
 
 @requires_db
+async def test_ptl_group_cim_2018f_holds_against_the_real_income_statement() -> None:
+    """End-to-end against tests/test_data/1st-App-H-PTL-Group-CIM.pdf's actual
+    Income Statement (p.11, 2018F column, CAD thousands): Revenue 17,146,
+    COGS 13,515, Gross Margin 3,631, Operating costs 1,672, Normalized EBITDA
+    1,959. Both relationships hold exactly. See
+    benchmarks/consistency/ptl_group_cim.yaml for the full hand-verified set
+    this pass doesn't yet cover (ratios, period-over-period growth)."""
+    _delete_org(ORG)
+    try:
+        ids = await _seed(
+            ORG,
+            {
+                "revenue": _claim(attribute="revenueUsd", normalized=17_146, period_year=2018),
+                "cogs": _claim(attribute="cogsUsd", normalized=13_515, period_year=2018),
+                "gross_margin": _claim(
+                    attribute="grossMarginUsd",
+                    normalized=3_631,
+                    period_year=2018,
+                    claim_type="computational",
+                ),
+                "opex": _claim(
+                    attribute="operatingCostsUsd", normalized=1_672, period_year=2018
+                ),
+                "ebitda": _claim(
+                    attribute="ebitdaUsd",
+                    normalized=1_959,
+                    period_year=2018,
+                    claim_type="computational",
+                ),
+            },
+        )
+        summary = await _run_consistency(ORG, "ptl-2018f")
+        assert summary.derived_from_edges == 4  # 2 operands x 2 rules
+        assert summary.contradicts_edges == 0
+        assert summary.claims_flagged == 0
+
+        edges, claims = await _edges_and_claims(ORG)
+        rules_seen = {e.metadata_["rule"] for e in edges if e.metadata_}
+        assert rules_seen == {
+            "gross_margin_from_revenue_and_cogs",
+            "ebitda_from_gross_margin_and_opex",
+        }
+        assert set(claims) == set(ids.values())
+    finally:
+        _delete_org(ORG)
+
+
+@requires_db
 async def test_rls_isolates_two_orgs() -> None:
     for org in (ORG, OTHER):
         _delete_org(org)

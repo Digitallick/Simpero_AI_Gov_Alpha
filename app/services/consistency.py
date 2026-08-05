@@ -92,6 +92,23 @@ DEFAULT_RULES: tuple[Rule, ...] = (
         operand_attributes=("preMoneyValuationUsd", "investmentAmountUsd"),
         formula=lambda o: o["preMoneyValuationUsd"] + o["investmentAmountUsd"],
     ),
+    # SIM-373: matches the two subtraction-shaped relationships hand-verified
+    # against tests/test_data/1st-App-H-PTL-Group-CIM.pdf's income statement
+    # (see benchmarks/consistency/ptl_group_cim.yaml) -- added so that
+    # benchmark has at least one real document's data this engine can
+    # actually be scored against today, not just illustrative rules.
+    Rule(
+        name="gross_margin_from_revenue_and_cogs",
+        derived_attribute="grossMarginUsd",
+        operand_attributes=("revenueUsd", "cogsUsd"),
+        formula=lambda o: o["revenueUsd"] - o["cogsUsd"],
+    ),
+    Rule(
+        name="ebitda_from_gross_margin_and_opex",
+        derived_attribute="ebitdaUsd",
+        operand_attributes=("grossMarginUsd", "operatingCostsUsd"),
+        formula=lambda o: o["grossMarginUsd"] - o["operatingCostsUsd"],
+    ),
 )
 
 
