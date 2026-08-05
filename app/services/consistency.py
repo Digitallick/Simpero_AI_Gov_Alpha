@@ -231,14 +231,13 @@ async def _check_rule(
             )
             summary.contradicts_edges += 1
 
-    if not matches:
-        # formula_mismatch: reserved in the claims contract's flags enum for
-        # exactly this -- a re-executed formula that disagrees with its own
-        # claimed value. Flags the DERIVED claim only; operands are not at
-        # fault for a formula that combines them incorrectly.
-        if not derived.flags or "formula_mismatch" not in derived.flags:
-            derived.flags = [*(derived.flags or []), "formula_mismatch"]
-            summary.claims_flagged += 1
+    # formula_mismatch: reserved in the claims contract's flags enum for
+    # exactly this -- a re-executed formula that disagrees with its own
+    # claimed value. Flags the DERIVED claim only; operands are not at
+    # fault for a formula that combines them incorrectly.
+    if not matches and (not derived.flags or "formula_mismatch" not in derived.flags):
+        derived.flags = [*(derived.flags or []), "formula_mismatch"]
+        summary.claims_flagged += 1
 
 
 async def _write_edge(

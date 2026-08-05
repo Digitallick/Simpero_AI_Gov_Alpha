@@ -96,7 +96,9 @@ async def _seed(org_key: str, claims: dict[str, Claim]) -> dict[str, uuid.UUID]:
     async with AsyncSessionLocal() as session, session.begin():
         await session.execute(text("SET LOCAL ROLE dd_app"))
         await session.execute(text("SELECT set_config('app.org_id', :k, true)"), {"k": org_key})
-        org = Organisation(clerk_org_id=org_key, name=f"consistency test ({org_key})", type=OrgType.PE_FIRM)
+        org = Organisation(
+            clerk_org_id=org_key, name=f"consistency test ({org_key})", type=OrgType.PE_FIRM
+        )
         session.add(org)
         await session.flush()
         for c in claims.values():
@@ -312,9 +314,7 @@ async def test_ptl_group_cim_2018f_holds_against_the_real_income_statement() -> 
                     period_year=2018,
                     claim_type="computational",
                 ),
-                "opex": _claim(
-                    attribute="operatingCostsUsd", normalized=1_672, period_year=2018
-                ),
+                "opex": _claim(attribute="operatingCostsUsd", normalized=1_672, period_year=2018),
                 "ebitda": _claim(
                     attribute="ebitdaUsd",
                     normalized=1_959,
