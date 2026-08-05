@@ -306,3 +306,11 @@ def test_xlsx_blocking_flags_accepted(validator: Draft202012Validator) -> None:
     # The XLSX path's blocking flags must be part of the contract.
     ok = {**VALID_XLSX_CLAIM, "flags": ["formula_mismatch", "external_reference_unresolved"]}
     assert not list(validator.iter_errors(ok)), "xlsx blocking flags should validate"
+
+
+def test_superseded_by_same_fact_flag_accepted(validator: Draft202012Validator) -> None:
+    # SIM-369: the dumb-consumer guard -- an edge-ignorant reader must be able
+    # to see, from the claim alone, that a SAME_FACT edge already collapses it
+    # into a canonical claim elsewhere, without reading the edges table.
+    ok = {**VALID_PDF_CLAIM, "flags": ["superseded_by_same_fact"]}
+    assert not list(validator.iter_errors(ok)), "superseded_by_same_fact should validate"
