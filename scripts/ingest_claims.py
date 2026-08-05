@@ -182,6 +182,15 @@ async def _run(payload: dict, org_key: str, commit: bool, session_id: uuid.UUID)
                     f"{e['type']} {e['from']!r}->{e['to']!r} (missing endpoint: {missing})"
                 )
                 continue
+            # SIM-369: CONTRADICTS is symmetric (neither side is "the" canonical
+            # claim, see the contract's edge $defs), so two runs that emit the
+            # same pair in opposite from/to order must still land as ONE row --
+            # otherwise the UNIQUE(org_id, from, to, type) below cannot dedupe
+            # them. Canonicalize to from < to by UUID so both orderings collapse
+            # onto the same row. same_fact is directional (from=corroborator,
+            # to=higher-precision source per the contract) and is NOT reordered.
+            if e["type"] == "contradicts" and from_id > to_id:
+                from_id, to_id = to_id, from_id
             edge_rows.append(
                 Edge(
                     org_id=org_id,
@@ -189,6 +198,14 @@ async def _run(payload: dict, org_key: str, commit: bool, session_id: uuid.UUID)
                     to_claim_id=to_id,
                     type=e["type"],
                     basis=e["basis"],
+                    # SIM-369: this ingest path is the parser's E1 reducer output
+                    # only (within-page same_fact/contradicts) -- reconciliation
+                    # and consistency write their own edges directly, elsewhere.
+                    created_by="extraction_reducer",
+                    run_id=str(session_id),
+                    # The parser doesn't emit rule/operand/value_delta metadata
+                    # for these edge types; nothing to carry here today.
+                    metadata_=None,
                 )
             )
         session.add_all(edge_rows)
