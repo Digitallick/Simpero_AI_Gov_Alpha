@@ -70,7 +70,18 @@ def _claim(
     normalized: float,
     page: int | None,
     table_group_id: uuid.UUID | None = None,
+    kind: str = "pdf",
+    sheet: str | None = None,
+    cell_ref: str | None = None,
 ) -> Claim:
+    # A PDF claim carries a page + char span; an XLSX claim carries sheet/cell_ref
+    # and no page (the locator CHECK enforces this; the span requirement exempts
+    # xlsx). Page-less claims are what exercise the SIM-371 page-scope guard.
+    location = (
+        {"kind": "pdf", "page": page, "char_start": 0, "char_end": 1}
+        if kind == "pdf"
+        else {"kind": "xlsx", "sheet": sheet, "cell_ref": cell_ref}
+    )
     return Claim(
         entity=entity,
         attribute=attribute,
@@ -84,12 +95,9 @@ def _claim(
             "scale_source": "explicit_in_value",
             "value_type": "currency",
         },
-        kind="pdf",
-        page=page,
-        char_start=0,
-        char_end=1,
         status="proposed",
         table_group_id=table_group_id,
+        **location,
     )
 
 
@@ -302,3 +310,34 @@ async def test_rls_isolates_two_orgs() -> None:
     finally:
         for org in (ORG, OTHER):
             _delete_org(org)
+
+
+@requires_db
+async def test_page_less_claims_are_left_to_e1() -> None:
+    """XLSX/DOCX claims have no page, so 3a's cross-page scope excludes them
+    entirely -- E1's within-'page' grouping owns them, and this pass must not also
+    write a same_fact edge that the directional UNIQUE could not dedupe against
+    E1's opposite-ordered one (the XLSX gap SIM-371's page scope closes)."""
+    _delete_org(ORG)
+    try:
+        await _seed(
+            ORG,
+            {
+                "s1": _claim(
+                    normalized=15_000_000, page=None, kind="xlsx", sheet="Sheet1", cell_ref="B2"
+                ),
+                "s2": _claim(
+                    normalized=15_000_000, page=None, kind="xlsx", sheet="Sheet2", cell_ref="B2"
+                ),
+            },
+        )
+        summary = await _run_reconciliation(ORG, "run-xlsx")
+        # Page-less claims never even enter a group, so nothing is written.
+        assert summary.groups_considered == 0
+        assert summary.same_fact_edges == 0
+        assert summary.contradicts_edges == 0
+
+        edges, _ = await _edges_and_claims(ORG)
+        assert edges == []
+    finally:
+        _delete_org(ORG)

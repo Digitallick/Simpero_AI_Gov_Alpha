@@ -119,6 +119,15 @@ async def reconcile_same_fact(
         if data_source_id is None
         else Claim.data_source_id == data_source_id
     )
+    # SIM-371: 3a is CROSS-PAGE reconciliation, and the within-vs-cross split that
+    # keeps it from double-counting E1's within-page edges is decided by comparing
+    # `page` (see _reconcile_group's same-page skip). A page-less claim -- an XLSX
+    # cell or a DOCX paragraph -- has no page to compare, so that guard cannot fire
+    # for it, and E1 and this pass could each write a same_fact edge for the same
+    # pair in opposite from/to order that the (directional) UNIQUE would not dedupe.
+    # Scope to paged claims: page-less claims stay entirely E1's. Cross-sheet XLSX
+    # reconciliation, if ever needed, is a separate pass, not this one.
+    stmt = stmt.where(Claim.page.isnot(None))
     # Qualitative claims carry no magnitude (value.normalized is null by
     # construction), already excluded by the filter above. claim_kind is
     # otherwise irrelevant here: numeric facts, not extraction provenance.
