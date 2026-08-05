@@ -129,7 +129,7 @@ async def reconcile_same_fact(
         groups.setdefault((c.entity, c.attribute, c.period_year, c.period_kind), []).append(c)
 
     summary = ReconciliationSummary()
-    for key, group in groups.items():
+    for group in groups.values():
         if len(group) < 2:
             continue
         summary.groups_considered += 1

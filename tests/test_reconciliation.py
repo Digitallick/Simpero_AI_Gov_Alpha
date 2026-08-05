@@ -98,7 +98,9 @@ async def _seed(org_key: str, claims: dict[str, Claim]) -> dict[str, uuid.UUID]:
     async with AsyncSessionLocal() as session, session.begin():
         await session.execute(text("SET LOCAL ROLE dd_app"))
         await session.execute(text("SELECT set_config('app.org_id', :k, true)"), {"k": org_key})
-        org = Organisation(clerk_org_id=org_key, name=f"reconcile test ({org_key})", type=OrgType.PE_FIRM)
+        org = Organisation(
+            clerk_org_id=org_key, name=f"reconcile test ({org_key})", type=OrgType.PE_FIRM
+        )
         session.add(org)
         await session.flush()
         for c in claims.values():
