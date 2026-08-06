@@ -6,8 +6,10 @@ anything, every claim persists."""
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
+from pathlib import Path
 
 import psycopg2
 import pytest
@@ -16,7 +18,7 @@ from sqlalchemy import select, text
 from app.core.database import AsyncSessionLocal
 from app.models import Claim, Edge, Organisation
 from app.models.organisation import OrgType
-from app.services.consistency import ConsistencySummary, Rule, reconcile_consistency
+from app.services.consistency import DEFAULT_RULES, ConsistencySummary, Rule, reconcile_consistency
 
 ORG = "sim372-consistency-org"
 OTHER = "sim372-consistency-other"
@@ -128,10 +130,10 @@ async def _edges_and_claims(org_key: str) -> tuple[list[Edge], dict[uuid.UUID, C
 
 def _gross_profit_claims(*, derived_value: float) -> dict[str, Claim]:
     return {
-        "revenue": _claim(attribute="revenueUsd", normalized=1_000_000),
-        "margin": _claim(attribute="grossMarginPct", normalized=20.0, value_type="percent"),
+        "revenue": _claim(attribute="revenue", normalized=1_000_000),
+        "margin": _claim(attribute="gross_margin", normalized=20.0, value_type="percent"),
         "derived": _claim(
-            attribute="grossProfitUsd", normalized=derived_value, claim_type="computational"
+            attribute="gross_profit", normalized=derived_value, claim_type="computational"
         ),
     }
 
@@ -267,7 +269,7 @@ async def test_ambiguous_operand_is_skipped_not_guessed() -> None:
     _delete_org(ORG)
     try:
         claims = _gross_profit_claims(derived_value=200_000)
-        claims["revenue_dup"] = _claim(attribute="revenueUsd", normalized=1_100_000)
+        claims["revenue_dup"] = _claim(attribute="revenue", normalized=1_100_000)
         await _seed(ORG, claims)
         summary = await _run_consistency(ORG, "run-1")
         assert summary.derived_from_edges == 0
@@ -307,17 +309,17 @@ async def test_ptl_group_cim_2018f_holds_against_the_real_income_statement() -> 
         ids = await _seed(
             ORG,
             {
-                "revenue": _claim(attribute="revenueUsd", normalized=17_146, period_year=2018),
-                "cogs": _claim(attribute="cogsUsd", normalized=13_515, period_year=2018),
-                "gross_margin": _claim(
-                    attribute="grossMarginUsd",
+                "revenue": _claim(attribute="revenue", normalized=17_146, period_year=2018),
+                "cogs": _claim(attribute="cogs", normalized=13_515, period_year=2018),
+                "gross_profit": _claim(
+                    attribute="gross_profit",
                     normalized=3_631,
                     period_year=2018,
                     claim_type="computational",
                 ),
-                "opex": _claim(attribute="operatingCostsUsd", normalized=1_672, period_year=2018),
+                "opex": _claim(attribute="opex", normalized=1_672, period_year=2018),
                 "ebitda": _claim(
-                    attribute="ebitdaUsd",
+                    attribute="ebitda",
                     normalized=1_959,
                     period_year=2018,
                     claim_type="computational",
@@ -332,8 +334,8 @@ async def test_ptl_group_cim_2018f_holds_against_the_real_income_statement() -> 
         edges, claims = await _edges_and_claims(ORG)
         rules_seen = {e.metadata_["rule"] for e in edges if e.metadata_}
         assert rules_seen == {
-            "gross_margin_from_revenue_and_cogs",
-            "ebitda_from_gross_margin_and_opex",
+            "gross_profit_from_revenue_and_cogs",
+            "ebitda_from_gross_profit_and_opex",
         }
         assert set(claims) == set(ids.values())
     finally:
@@ -440,3 +442,23 @@ async def test_percent_derived_is_compared_in_its_native_unit() -> None:
         assert summary.contradicts_edges == 0
     finally:
         _delete_org(ORG)
+
+
+def test_default_rules_reference_only_canonical_attributes() -> None:
+    """SIM-376: DEFAULT_RULES must key exclusively on the real canonical
+    vocabulary contracts/claims.schema.json publishes (SIM-375) -- this repo
+    owns that file, so there's no cross-repo drift risk in reading it
+    directly (unlike SIM-375's own contract test, which hand-keeps a copy
+    because it cannot see the parser repo). No DB needed."""
+    schema_path = Path(__file__).parent.parent / "contracts" / "claims.schema.json"
+    schema = json.loads(schema_path.read_text())
+    canonical_attributes = set(schema["$defs"]["canonicalAttribute"]["enum"])
+
+    for rule in DEFAULT_RULES:
+        assert rule.derived_attribute in canonical_attributes, (
+            f"{rule.name}: derived_attribute {rule.derived_attribute!r} is not canonical"
+        )
+        for attr in rule.operand_attributes:
+            assert attr in canonical_attributes, (
+                f"{rule.name}: operand attribute {attr!r} is not canonical"
+            )

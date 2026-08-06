@@ -17,20 +17,21 @@ already exists in the claims contract, reserved for exactly this). Per
 SIM-372's acceptance: a mismatch never resolves anything -- every claim
 involved persists untouched apart from that one flag.
 
-HONEST SCOPE, not the full ~15-30 relationships: this repo has no committed
-canonical attribute vocabulary (E2/SIM-344 lives upstream in the parser
-repo/its own data, not as a file here) to hardcode real relationship
-definitions against. Inventing plausible-looking attribute names here would
-be guessing at a contract this module cannot verify. Instead, the engine
-below is genuinely rule-driven (`Rule` + `DEFAULT_RULES`), and the default
-catalog implements the fixed-arity, single-entity relationships the ticket
-names that fit that shape (revenue x margin = gross profit; ebitda / revenue
-= margin; pre + investment = post). Deliberately NOT implemented, and not
-faked: "segments sum to total" (variable arity, cross-entity), "two years
-imply the stated growth" (needs period-pair matching, not one period), and
-"table figure = narrative figure modulo adjustments" (needs a fuzzy-match
-concept beyond a tolerance). Extend DEFAULT_RULES once the real attribute
-vocabulary is confirmed against the parser's actual output.
+HONEST SCOPE, not the full ~15-30 relationships: `DEFAULT_RULES` below is
+genuinely rule-driven (`Rule` + `DEFAULT_RULES`) and implements the
+fixed-arity, single-entity relationships that fit that shape against the real
+`$defs/canonicalAttribute` vocabulary SIM-375 published
+(contracts/claims.schema.json) -- revenue x margin = gross profit; revenue -
+cogs = gross profit (the same relationship, two independent ways to check
+it); ebitda / revenue = ebitda_margin; gross profit - opex = ebitda. No
+valuation rule: `pre_money`/`investment`/`post_money` aren't in the 26
+`CoreAttribute` names -- they fall into the `operating_metric` escape valve,
+which isn't a fixed-arity formula target, so that relationship is dropped
+rather than hardcoded against names the vocabulary doesn't have. Deliberately
+NOT implemented, and not faked: "segments sum to total" (variable arity,
+cross-entity), "two years imply the stated growth" (needs period-pair
+matching, not one period), and "table figure = narrative figure modulo
+adjustments" (needs a fuzzy-match concept beyond a tolerance).
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ from app.services.tolerance import values_match
 # Match vs mismatch uses the shared value_type-keyed tolerance table
 # (app/services/tolerance.py): currency/ratio relative 5%, percent absolute
 # 100 bp, count/date/text exact. The DERIVED claim's value_type selects the
-# rule -- a recomputed grossMarginUsd (currency) tolerates 5%, a marginPct
+# rule -- a recomputed gross_profit (currency) tolerates 5%, an ebitda_margin
 # (percent) tolerates 100 bp, and a ratio no longer gets an absolute floor
 # that made sub-1 comparisons vacuous.
 
@@ -63,25 +64,27 @@ class Rule:
 
 
 # Starter catalog -- see the module docstring for what this covers and what
-# it deliberately does not.
+# it deliberately does not. Every derived_attribute/operand_attributes name
+# below must come from contracts/claims.schema.json's $defs/canonicalAttribute
+# (SIM-375) -- tests/test_consistency.py asserts this so the two cannot drift.
+#
+# gross_profit is derived two independent ways (revenue x margin, and
+# revenue - cogs) -- SIM-372's guessed vocabulary named these grossProfitUsd
+# and grossMarginUsd as if they were different concepts; the real vocabulary
+# has one name for both, so a gross_profit claim now gets checked both ways
+# whenever both operand sets are present.
 DEFAULT_RULES: tuple[Rule, ...] = (
     Rule(
         name="gross_profit_from_revenue_and_margin",
-        derived_attribute="grossProfitUsd",
-        operand_attributes=("revenueUsd", "grossMarginPct"),
-        formula=lambda o: o["revenueUsd"] * o["grossMarginPct"],
+        derived_attribute="gross_profit",
+        operand_attributes=("revenue", "gross_margin"),
+        formula=lambda o: o["revenue"] * o["gross_margin"],
     ),
     Rule(
-        name="margin_from_ebitda_and_revenue",
-        derived_attribute="marginPct",
-        operand_attributes=("ebitdaUsd", "revenueUsd"),
-        formula=lambda o: o["ebitdaUsd"] / o["revenueUsd"] if o["revenueUsd"] else float("nan"),
-    ),
-    Rule(
-        name="post_money_from_pre_money_and_investment",
-        derived_attribute="postMoneyValuationUsd",
-        operand_attributes=("preMoneyValuationUsd", "investmentAmountUsd"),
-        formula=lambda o: o["preMoneyValuationUsd"] + o["investmentAmountUsd"],
+        name="ebitda_margin_from_ebitda_and_revenue",
+        derived_attribute="ebitda_margin",
+        operand_attributes=("ebitda", "revenue"),
+        formula=lambda o: o["ebitda"] / o["revenue"] if o["revenue"] else float("nan"),
     ),
     # SIM-373: matches the two subtraction-shaped relationships hand-verified
     # against tests/test_data/1st-App-H-PTL-Group-CIM.pdf's income statement
@@ -89,16 +92,16 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     # benchmark has at least one real document's data this engine can
     # actually be scored against today, not just illustrative rules.
     Rule(
-        name="gross_margin_from_revenue_and_cogs",
-        derived_attribute="grossMarginUsd",
-        operand_attributes=("revenueUsd", "cogsUsd"),
-        formula=lambda o: o["revenueUsd"] - o["cogsUsd"],
+        name="gross_profit_from_revenue_and_cogs",
+        derived_attribute="gross_profit",
+        operand_attributes=("revenue", "cogs"),
+        formula=lambda o: o["revenue"] - o["cogs"],
     ),
     Rule(
-        name="ebitda_from_gross_margin_and_opex",
-        derived_attribute="ebitdaUsd",
-        operand_attributes=("grossMarginUsd", "operatingCostsUsd"),
-        formula=lambda o: o["grossMarginUsd"] - o["operatingCostsUsd"],
+        name="ebitda_from_gross_profit_and_opex",
+        derived_attribute="ebitda",
+        operand_attributes=("gross_profit", "opex"),
+        formula=lambda o: o["gross_profit"] - o["opex"],
     ),
 )
 
