@@ -103,6 +103,17 @@ DEFAULT_RULES: tuple[Rule, ...] = (
 )
 
 
+def _base(claim: Claim) -> float:
+    """An operand's value in a canonical BASE unit for arithmetic: a percent
+    (face value 28.5) becomes its ratio (0.285), so `revenue * margin` is
+    dimensionally correct whether the margin arrived as "28.5%" (value_type
+    percent) or "0.285" (value_type ratio). currency/ratio/count are already
+    base. Read from value_type -- never assumed -- so the same rule works
+    across documents that express the same field differently."""
+    v = float(claim.value["normalized"])
+    return v / 100.0 if claim.value.get("value_type") == "percent" else v
+
+
 def _canonical_from_to(a: uuid.UUID, b: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
     return (a, b) if a < b else (b, a)
 
@@ -190,10 +201,16 @@ async def _check_rule(
             return
         operands[attr] = group[0]
 
-    operand_values = {attr: float(c.value["normalized"]) for attr, c in operands.items()}
-    expected = rule.formula(operand_values)
+    # Operands in base units; the formula yields a base result, which is then
+    # put into the DERIVED claim's storage unit before comparing -- a percent is
+    # stored face value (its ratio x 100) -- so both the comparison and its
+    # value_type tolerance run in the derived's native units.
+    operand_values = {attr: _base(c) for attr, c in operands.items()}
+    derived_vt = derived.value.get("value_type", "")
+    expected_base = rule.formula(operand_values)
+    expected = expected_base * 100.0 if derived_vt == "percent" else expected_base
     actual = float(derived.value["normalized"])
-    matches = values_match(expected, actual, derived.value.get("value_type", ""))
+    matches = values_match(expected, actual, derived_vt)
 
     for operand in operands.values():
         if matches:

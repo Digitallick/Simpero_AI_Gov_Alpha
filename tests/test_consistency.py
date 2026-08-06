@@ -129,7 +129,7 @@ async def _edges_and_claims(org_key: str) -> tuple[list[Edge], dict[uuid.UUID, C
 def _gross_profit_claims(*, derived_value: float) -> dict[str, Claim]:
     return {
         "revenue": _claim(attribute="revenueUsd", normalized=1_000_000),
-        "margin": _claim(attribute="grossMarginPct", normalized=0.20),
+        "margin": _claim(attribute="grossMarginPct", normalized=20.0, value_type="percent"),
         "derived": _claim(
             attribute="grossProfitUsd", normalized=derived_value, claim_type="computational"
         ),
@@ -397,5 +397,46 @@ async def test_tolerance_is_selected_by_the_derived_claims_value_type() -> None:
             await session.flush()
         assert summary.contradicts_edges == 2  # one per operand
         assert summary.derived_from_edges == 0
+    finally:
+        _delete_org(ORG)
+
+
+@requires_db
+async def test_percent_derived_is_compared_in_its_native_unit() -> None:
+    """A percent-typed derived (marginPct, face value 20.0) = ebitda / revenue.
+    The pass computes the base ratio (0.20) and converts it to the derived's
+    percent unit (20.0) before comparing -- units come from value_type, so a
+    correct 20% margin matches instead of falsely contradicting a 0.20 ratio."""
+    margin_rule = Rule(
+        name="margin_from_ebitda_and_revenue",
+        derived_attribute="marginPct",
+        operand_attributes=("ebitdaUsd", "revenueUsd"),
+        formula=lambda o: o["ebitdaUsd"] / o["revenueUsd"] if o["revenueUsd"] else float("nan"),
+    )
+    _delete_org(ORG)
+    try:
+        await _seed(
+            ORG,
+            {
+                "ebitda": _claim(attribute="ebitdaUsd", normalized=200_000),
+                "revenue": _claim(attribute="revenueUsd", normalized=1_000_000),
+                "margin": _claim(
+                    attribute="marginPct",
+                    normalized=20.0,
+                    value_type="percent",
+                    claim_type="computational",
+                ),
+            },
+        )
+        async with AsyncSessionLocal() as session, session.begin():
+            await session.execute(text("SET LOCAL ROLE dd_app"))
+            await session.execute(text("SELECT set_config('app.org_id', :k, true)"), {"k": ORG})
+            summary = await reconcile_consistency(
+                session, data_source_id=None, run_id="run-margin", rules=(margin_rule,)
+            )
+            await session.flush()
+        # 200_000 / 1_000_000 = 0.20 -> 20.0% == claimed 20.0 -> match
+        assert summary.derived_from_edges == 2
+        assert summary.contradicts_edges == 0
     finally:
         _delete_org(ORG)
