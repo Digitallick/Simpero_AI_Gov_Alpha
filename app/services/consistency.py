@@ -44,23 +44,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Claim, Edge
+from app.services.tolerance import values_match
 
-# Formula-reconstruction tolerance -- OPEN DECISION per SIM-372's own
-# acceptance criteria ("a numeric tolerance / rounding policy is defined...
-# needs a decision"). This is a placeholder, not a product sign-off: wider
-# than reconciliation's same-fact tolerance (SIM-371's 0.1%) because this
-# compares a RECOMPUTED formula result, where the operands' own rounding
-# compounds, not a literal restatement of one number. 1% relative + a $1
-# absolute floor for near-zero values. Flagged in the run summary for review.
-_REL_TOL = 0.01
-_ABS_TOL = 1.0
-
-
-def _values_match(expected: float, actual: float) -> bool:
-    if expected == actual:
-        return True
-    scale = max(abs(expected), abs(actual), 1.0)
-    return abs(expected - actual) <= max(_ABS_TOL, _REL_TOL * scale)
+# Match vs mismatch uses the shared value_type-keyed tolerance table
+# (app/services/tolerance.py): currency/ratio relative 5%, percent absolute
+# 100 bp, count/date/text exact. The DERIVED claim's value_type selects the
+# rule -- a recomputed grossMarginUsd (currency) tolerates 5%, a marginPct
+# (percent) tolerates 100 bp, and a ratio no longer gets an absolute floor
+# that made sub-1 comparisons vacuous.
 
 
 @dataclass(frozen=True)
@@ -202,7 +193,7 @@ async def _check_rule(
     operand_values = {attr: float(c.value["normalized"]) for attr, c in operands.items()}
     expected = rule.formula(operand_values)
     actual = float(derived.value["normalized"])
-    matches = _values_match(expected, actual)
+    matches = values_match(expected, actual, derived.value.get("value_type", ""))
 
     for operand in operands.values():
         if matches:

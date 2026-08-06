@@ -16,7 +16,7 @@ from sqlalchemy import select, text
 from app.core.database import AsyncSessionLocal
 from app.models import Claim, Edge, Organisation
 from app.models.organisation import OrgType
-from app.services.consistency import ConsistencySummary, reconcile_consistency
+from app.services.consistency import ConsistencySummary, Rule, reconcile_consistency
 
 ORG = "sim372-consistency-org"
 OTHER = "sim372-consistency-other"
@@ -69,6 +69,7 @@ def _claim(
     period_year: int = 2024,
     period_kind: str = "A",
     claim_type: str = "numerical",
+    value_type: str = "currency",
 ) -> Claim:
     return Claim(
         entity=entity,
@@ -82,7 +83,7 @@ def _claim(
             "unit": "USD",
             "scale_multiplier": 1,
             "scale_source": "explicit_in_value",
-            "value_type": "currency",
+            "value_type": value_type,
         },
         kind="pdf",
         page=1,
@@ -198,7 +199,7 @@ async def test_mismatched_formula_flags_and_contradicts_never_resolves() -> None
 
 @requires_db
 async def test_within_tolerance_still_matches() -> None:
-    """1% relative tolerance: 200_000 * 1.005 = 201_000 is inside it."""
+    """currency = relative 5%: 201_000 is within 5% of the recomputed 200_000."""
     _delete_org(ORG)
     try:
         await _seed(ORG, _gross_profit_claims(derived_value=201_000))
@@ -211,10 +212,10 @@ async def test_within_tolerance_still_matches() -> None:
 
 @requires_db
 async def test_outside_tolerance_mismatches() -> None:
-    """210_000 vs 200_000 is a 5% delta -- outside the 1% tolerance."""
+    """230_000 vs the recomputed 200_000 is 15% -- outside the 5% currency tolerance."""
     _delete_org(ORG)
     try:
-        await _seed(ORG, _gross_profit_claims(derived_value=210_000))
+        await _seed(ORG, _gross_profit_claims(derived_value=230_000))
         summary = await _run_consistency(ORG, "run-1")
         assert summary.derived_from_edges == 0
         assert summary.contradicts_edges == 2
@@ -358,3 +359,43 @@ async def test_rls_isolates_two_orgs() -> None:
     finally:
         for org in (ORG, OTHER):
             _delete_org(org)
+
+
+@requires_db
+async def test_tolerance_is_selected_by_the_derived_claims_value_type() -> None:
+    """The derived claim's value_type drives the tolerance. A ratio derived
+    (winRate = wins/total) claimed at 0.90 against a recomputed 0.20 must
+    CONTRADICT -- under the old flat 1% + $1 floor it would have matched, the
+    exact vacuous-ratio bug the value_type table fixes."""
+    ratio_rule = Rule(
+        name="win_rate_from_wins_and_total",
+        derived_attribute="winRateRatio",
+        operand_attributes=("winsCount", "totalCount"),
+        formula=lambda o: o["winsCount"] / o["totalCount"] if o["totalCount"] else float("nan"),
+    )
+    _delete_org(ORG)
+    try:
+        await _seed(
+            ORG,
+            {
+                "wins": _claim(attribute="winsCount", normalized=20, value_type="count"),
+                "total": _claim(attribute="totalCount", normalized=100, value_type="count"),
+                "ratio": _claim(
+                    attribute="winRateRatio",
+                    normalized=0.90,
+                    claim_type="computational",
+                    value_type="ratio",
+                ),
+            },
+        )
+        async with AsyncSessionLocal() as session, session.begin():
+            await session.execute(text("SET LOCAL ROLE dd_app"))
+            await session.execute(text("SELECT set_config('app.org_id', :k, true)"), {"k": ORG})
+            summary = await reconcile_consistency(
+                session, data_source_id=None, run_id="run-ratio", rules=(ratio_rule,)
+            )
+            await session.flush()
+        assert summary.contradicts_edges == 2  # one per operand
+        assert summary.derived_from_edges == 0
+    finally:
+        _delete_org(ORG)
