@@ -22,6 +22,49 @@ from jsonschema import Draft202012Validator
 
 SCHEMA_PATH = Path(__file__).parent / "claims.schema.json"
 
+# SIM-375: the parser's real CANONICAL_ATTRIBUTES (parser_service/emit.py in
+# Simpero_Gov_AI_Services) is the actual source of truth -- this repo has no
+# import path to it (parsing was split out; see CLAUDE.md), so this is a
+# hand-kept copy, same as the schema's own $defs/canonicalAttribute enum is.
+# This test only proves this repo's SCHEMA and this repo's COPY agree with
+# each other; it cannot see the parser repo, so it cannot catch someone
+# editing THIS repo's schema.json without updating both this constant and the
+# parser side by hand. The parser repo's own test (test_canonical_attribute_
+# def_matches_the_parser_vocabulary) is what checks against the real
+# CoreAttribute; the two tests together are what "lockstep" means until
+# there's a single shared source both repos import.
+CANONICAL_ATTRIBUTES: frozenset[str] = frozenset(
+    {
+        "revenue",
+        "cogs",
+        "gross_profit",
+        "opex",
+        "ebitda",
+        "ebit",
+        "net_income",
+        "gross_margin",
+        "net_margin",
+        "ebitda_margin",
+        "depreciation_and_amortization",
+        "interest_expense",
+        "tax_expense",
+        "capex",
+        "total_assets",
+        "total_liabilities",
+        "total_equity",
+        "cash_and_equivalents",
+        "total_debt",
+        "net_debt",
+        "working_capital",
+        "accounts_receivable",
+        "accounts_payable",
+        "inventory",
+        "operating_cash_flow",
+        "free_cash_flow",
+        "operating_metric",
+    }
+)
+
 
 @pytest.fixture(scope="module")
 def validator() -> Draft202012Validator:
@@ -314,3 +357,71 @@ def test_superseded_by_same_fact_flag_accepted(validator: Draft202012Validator) 
     # into a canonical claim elsewhere, without reading the edges table.
     ok = {**VALID_PDF_CLAIM, "flags": ["superseded_by_same_fact"]}
     assert not list(validator.iter_errors(ok)), "superseded_by_same_fact should validate"
+
+
+# --- SIM-375: canonical attribute vocabulary ----------------------------------
+
+
+def test_canonical_attribute_def_matches_this_repos_copy() -> None:
+    """SIM-375: the schema's own hand-kept copy stays internally consistent. See
+    the CANONICAL_ATTRIBUTES module docstring for what this test can and cannot
+    catch -- it is one half of the cross-repo lockstep, not the whole thing."""
+    schema = json.loads(SCHEMA_PATH.read_text())
+    published = set(schema["$defs"]["canonicalAttribute"]["enum"])
+    assert published == CANONICAL_ATTRIBUTES
+
+
+def test_non_canonical_attribute_rejected_once_e2_has_run(
+    validator: Draft202012Validator,
+) -> None:
+    """SIM-375: $defs/canonicalAttribute was published but never enforced --
+    attribute stayed a bare string, so the stale camelCase style (or anything
+    else) still validated once attribute_raw signalled E2 had actually run.
+    This is the exact gap: a claim claiming to be canonicalized but carrying a
+    name outside the vocabulary must be rejected, not silently accepted."""
+    bad = {**VALID_PDF_CLAIM, "attribute": "revenueLatestUsd", "attribute_raw": "Revenue | 2019F"}
+    assert list(validator.iter_errors(bad)), (
+        "a non-canonical attribute must be rejected once attribute_raw shows E2 ran"
+    )
+
+
+def test_canonical_attribute_accepted_once_e2_has_run(validator: Draft202012Validator) -> None:
+    ok = {**VALID_PDF_CLAIM, "attribute": "revenue", "attribute_raw": "Revenue | 2019F"}
+    assert not list(validator.iter_errors(ok)), "a real canonical attribute must validate"
+
+
+def test_operating_metric_bucket_accepted_once_e2_has_run(
+    validator: Draft202012Validator,
+) -> None:
+    # operating_metric is the escape valve (SIM-344): a real, E2-processed
+    # claim outside the closed financial-statement core, not a failure case.
+    ok = {
+        **VALID_PDF_CLAIM,
+        "attribute": "operating_metric",
+        "attribute_raw": "Same-store sales growth",
+    }
+    assert not list(validator.iter_errors(ok)), "operating_metric must validate once E2 has run"
+
+
+def test_attribute_unconstrained_when_attribute_raw_is_null(
+    validator: Draft202012Validator,
+) -> None:
+    # attribute_raw explicitly null (not merely absent) is the documented
+    # signal for "E2 never reached this claim" (e.g. a qualitative claim) --
+    # attribute stays whatever the producing tier set, canonical or not.
+    ok = {**VALID_PDF_CLAIM, "attribute": "revenueTrailing5yrAvg", "attribute_raw": None}
+    assert not list(validator.iter_errors(ok)), (
+        "attribute stays unconstrained when attribute_raw is explicitly null"
+    )
+
+
+def test_attribute_unconstrained_when_attribute_raw_is_absent(
+    validator: Draft202012Validator,
+) -> None:
+    # The common case today: every real fixture above omits attribute_raw
+    # entirely and none of them carry a canonical name -- the new conditional
+    # must not retroactively break claims from before E2 existed.
+    assert "attribute_raw" not in VALID_PDF_CLAIM
+    assert not list(validator.iter_errors(VALID_PDF_CLAIM)), (
+        "attribute stays unconstrained when attribute_raw is absent entirely"
+    )
