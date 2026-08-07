@@ -462,3 +462,63 @@ def test_default_rules_reference_only_canonical_attributes() -> None:
             assert attr in canonical_attributes, (
                 f"{rule.name}: operand attribute {attr!r} is not canonical"
             )
+
+
+@requires_db
+async def test_gross_profit_reconstructs_both_ways_all_derived_from() -> None:
+    # SIM-376: gross_profit is checked two ways (revenue x margin AND revenue -
+    # cogs). When both hold, it is derived_from all three operands -- the shared
+    # `revenue` edge deduped to one -- with no flag and no contradicts.
+    _delete_org(ORG)
+    try:
+        ids = await _seed(
+            ORG,
+            {
+                "revenue": _claim(attribute="revenue", normalized=1_000_000),
+                "margin": _claim(attribute="gross_margin", normalized=20.0, value_type="percent"),
+                "cogs": _claim(attribute="cogs", normalized=800_000),
+                "gross_profit": _claim(
+                    attribute="gross_profit", normalized=200_000, claim_type="computational"
+                ),
+            },
+        )
+        summary = await _run_consistency(ORG, "run-1")
+        assert summary.derived_from_edges == 3
+        assert summary.contradicts_edges == 0
+        assert summary.claims_flagged == 0
+
+        edges, claims = await _edges_and_claims(ORG)
+        assert {e.type for e in edges} == {"derived_from"}
+        assert "formula_mismatch" not in (claims[ids["gross_profit"]].flags or [])
+    finally:
+        _delete_org(ORG)
+
+
+@requires_db
+async def test_gross_profit_partial_agreement_is_flagged_never_both() -> None:
+    # SIM-376: revenue x margin = gross_profit (matches) but revenue - cogs !=
+    # gross_profit (mismatch). The claim is flagged and gets ONLY contradicts
+    # edges -- it must never carry a derived_from AND a contradicts at once.
+    _delete_org(ORG)
+    try:
+        ids = await _seed(
+            ORG,
+            {
+                "revenue": _claim(attribute="revenue", normalized=1_000_000),
+                "margin": _claim(attribute="gross_margin", normalized=20.0, value_type="percent"),
+                "cogs": _claim(attribute="cogs", normalized=750_000),  # 1M - 750k = 250k != 200k
+                "gross_profit": _claim(
+                    attribute="gross_profit", normalized=200_000, claim_type="computational"
+                ),
+            },
+        )
+        summary = await _run_consistency(ORG, "run-1")
+        assert summary.derived_from_edges == 0
+        assert summary.contradicts_edges == 2  # gross_profit vs revenue, vs cogs
+        assert summary.claims_flagged == 1
+
+        edges, claims = await _edges_and_claims(ORG)
+        assert {e.type for e in edges} == {"contradicts"}
+        assert "formula_mismatch" in (claims[ids["gross_profit"]].flags or [])
+    finally:
+        _delete_org(ORG)
