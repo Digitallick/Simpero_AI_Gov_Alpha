@@ -100,7 +100,11 @@ step "2/6" "Parse → extract → emit   ($TIER_NAME; docling layout analysis)"
 # is built as an array. The parser subprocess inherits this shell's environment,
 # so ANTHROPIC_API_KEY reaches it without being echoed anywhere.
 EMIT_ARGS=(scripts/emit_claims.py "$LOCAL_PDF" --entity "$ENTITY")
-[[ -n "$TIER_FLAG" ]] && EMIT_ARGS+=("$TIER_FLAG")
+# SIM-380: on the prose tiers (which already require the API key) also map
+# attributes onto the SIM-344 canonical vocabulary in one batched call.
+# Without it, "EBITDA" stays "EBITDA" (not "ebitda") and 3b consistency has
+# no canonical operands to reconstruct -- step 4/6 would find nothing.
+[[ -n "$TIER_FLAG" ]] && EMIT_ARGS+=("$TIER_FLAG" --canonicalize-attributes)
 ( cd "$PARSER_DIR" && env -u VIRTUAL_ENV uv run python "${EMIT_ARGS[@]}" ) > "$CLAIMS_JSON" 2> "$EMIT_LOG" &
 EMIT_PID=$!
 # ASCII frames on purpose: macOS ships bash 3.2, whose ${var:i:1} slices by
