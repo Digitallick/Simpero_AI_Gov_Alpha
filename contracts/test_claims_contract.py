@@ -84,7 +84,7 @@ def validator() -> Draft202012Validator:
 # nothing has checked it yet -- Verify moves it to cited|rejected. An extractor
 # asserting `cited` here would be claiming a check it never ran.
 VALID_PDF_CLAIM = {
-    "entity": "PTL Group",
+    "entity": "Acme Corp",
     "claim_ref": "11:1502-1509[#0]",
     "claim_type": "numerical",
     "attribute": "revenueTrailing5yrAvg",
@@ -100,7 +100,7 @@ VALID_PDF_CLAIM = {
     },
     "location": {
         "kind": "pdf",
-        "file": "1st-App-H-PTL-Group-CIM.pdf",
+        "file": "cim_01.pdf",
         "page": 11,
         "char_start": 1502,
         "char_end": 1509,

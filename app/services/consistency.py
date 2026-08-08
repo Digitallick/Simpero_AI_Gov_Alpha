@@ -93,10 +93,10 @@ DEFAULT_RULES: tuple[Rule, ...] = (
         formula=lambda o: o["ebitda"] / o["revenue"] if o["revenue"] else float("nan"),
     ),
     # SIM-373: matches the two subtraction-shaped relationships hand-verified
-    # against tests/test_data/1st-App-H-PTL-Group-CIM.pdf's income statement
-    # (see benchmarks/consistency/ptl_group_cim.yaml) -- added so that
-    # benchmark has at least one real document's data this engine can
-    # actually be scored against today, not just illustrative rules.
+    # against the cim-01 income statement (see benchmarks/consistency/
+    # cim_01.yaml) -- added so that benchmark has at least one real document's
+    # data this engine can actually be scored against today, not just
+    # illustrative rules.
     Rule(
         name="gross_profit_from_revenue_and_cogs",
         derived_attribute="gross_profit",

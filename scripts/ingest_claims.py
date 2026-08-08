@@ -21,8 +21,8 @@ SAFETY, by construction:
   production-ingest core. Until then: ingest a document once, or clear its rows
   first. RESTRICT on the edge FKs is what will force that teardown's ordering.
 
-    uv run python scripts/ingest_claims.py claims.json --org-key demo_e2e_ptl
-    uv run python scripts/ingest_claims.py claims.json --org-key demo_e2e_ptl --commit
+    uv run python scripts/ingest_claims.py claims.json --org-key demo_e2e
+    uv run python scripts/ingest_claims.py claims.json --org-key demo_e2e --commit
 
 The nested seam location ({kind, page, char_start, ...}) is flattened into the
 table's per-format columns here -- that translation IS the ingest's job.
