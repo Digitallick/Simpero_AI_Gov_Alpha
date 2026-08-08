@@ -297,13 +297,11 @@ async def test_rerun_is_idempotent_via_the_unique_constraint() -> None:
 
 
 @requires_db
-async def test_ptl_group_cim_2018f_holds_against_the_real_income_statement() -> None:
-    """End-to-end against tests/test_data/1st-App-H-PTL-Group-CIM.pdf's actual
-    Income Statement (p.11, 2018F column, CAD thousands): Revenue 17,146,
-    COGS 13,515, Gross Margin 3,631, Operating costs 1,672, Normalized EBITDA
-    1,959. Both relationships hold exactly. See
-    benchmarks/consistency/ptl_group_cim.yaml for the full hand-verified set
-    this pass doesn't yet cover (ratios, period-over-period growth)."""
+async def test_cim_01_2018f_holds_against_the_real_income_statement() -> None:
+    """End-to-end against the cim-01 income statement (2018F column, CAD
+    thousands): Revenue 17,146, COGS 13,515, Gross Profit 3,631, Operating
+    costs 1,672, Normalized EBITDA 1,959. Both relationships hold exactly. See
+    benchmarks/consistency/cim_01.yaml for the full hand-verified set."""
     _delete_org(ORG)
     try:
         ids = await _seed(
@@ -326,7 +324,7 @@ async def test_ptl_group_cim_2018f_holds_against_the_real_income_statement() -> 
                 ),
             },
         )
-        summary = await _run_consistency(ORG, "ptl-2018f")
+        summary = await _run_consistency(ORG, "cim01-2018f")
         assert summary.derived_from_edges == 4  # 2 operands x 2 rules
         assert summary.contradicts_edges == 0
         assert summary.claims_flagged == 0
